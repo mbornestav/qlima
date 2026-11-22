@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/HeatBridge.Core/HeatBridge.Core.csproj" />
+    <Project Path="src/HeatBridge.EspHome/HeatBridge.EspHome.csproj" />
+    <Project Path="src/HeatBridge.Web/HeatBridge.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/HeatBridge.Tests/HeatBridge.Tests.csproj" />
+  </Folder>
+</Solution>

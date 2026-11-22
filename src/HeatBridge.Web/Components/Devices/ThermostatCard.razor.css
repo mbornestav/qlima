@@ -1,0 +1,504 @@
+/* ---------- Mode theming ---------- */
+.thermostat {
+    --accent: var(--mode-off);
+    --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    padding: clamp(1.1rem, 3vw, 2rem);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+}
+
+.thermostat::before {
+    /* Soft glow in the mode colour behind the dial. */
+    content: "";
+    position: absolute;
+    inset: -40% -20% auto -20%;
+    height: 70%;
+    background: radial-gradient(closest-side, var(--accent-soft), transparent);
+    pointer-events: none;
+    transition: background 400ms ease;
+}
+
+.thermostat > * {
+    position: relative;
+}
+
+[data-mode="heat"] { --accent: var(--mode-heat); }
+[data-mode="cool"] { --accent: var(--mode-cool); }
+[data-mode="auto"] { --accent: var(--mode-auto); }
+[data-mode="dry"]  { --accent: var(--mode-dry); }
+[data-mode="fan"]  { --accent: var(--mode-fan); }
+[data-mode="off"], [data-mode="unknown"] { --accent: var(--mode-off); }
+
+.thermostat[data-status="offline"] .card-body {
+    filter: saturate(0.35);
+    opacity: 0.75;
+}
+
+/* ---------- Header ---------- */
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.identity {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    min-width: 0;
+}
+
+.device-badge {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 0.9rem;
+    color: var(--accent);
+    background: var(--accent-soft);
+    transition: color 300ms ease, background 300ms ease;
+}
+
+h2 {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+}
+
+.subtitle {
+    margin: 0.1rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex: none;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    background: var(--surface-muted);
+    color: var(--text-muted);
+}
+
+.status-pill .dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.status-pill[data-status="online"] {
+    color: var(--success);
+    background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+.status-pill[data-status="online"] .dot {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 60%, transparent);
+    animation: pulse 2.4s ease-out infinite;
+}
+
+.status-pill[data-status="offline"] {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.status-pill[data-status="connecting"] .dot {
+    animation: blink 1s ease-in-out infinite;
+}
+
+/* ---------- Banners and empty state ---------- */
+.banner {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    padding: 0.85rem 1rem;
+    border-radius: var(--radius-md);
+    font-size: 0.92rem;
+}
+
+.banner div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.banner-offline {
+    color: var(--danger-text);
+    background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 3rem 1rem;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+/* ---------- Body layout ---------- */
+.card-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.75rem;
+    transition: filter 300ms ease, opacity 300ms ease;
+}
+
+@media (min-width: 760px) {
+    .card-body {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+        align-items: center;
+        gap: 2.5rem;
+    }
+}
+
+/* ---------- Dial ---------- */
+.dial-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.dial {
+    position: relative;
+    width: min(100%, 300px);
+    aspect-ratio: 1;
+}
+
+.dial-svg {
+    width: 100%;
+    height: 100%;
+}
+
+.dial-track,
+.dial-value-arc {
+    fill: none;
+    stroke-width: 14;
+    stroke-linecap: round;
+}
+
+.dial-track {
+    stroke: var(--surface-muted);
+}
+
+.dial-value-arc {
+    stroke: var(--accent);
+    transition: stroke-dasharray 350ms ease, stroke 300ms ease;
+}
+
+.dial-knob {
+    fill: var(--surface);
+    stroke: var(--accent);
+    stroke-width: 5;
+    transition: cx 350ms ease, cy 350ms ease, stroke 300ms ease;
+    filter: drop-shadow(0 2px 4px rgb(15 23 42 / 0.25));
+}
+
+.dial-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    text-align: center;
+}
+
+.dial-label {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.dial-value {
+    font-size: clamp(3.2rem, 12vw, 4.2rem);
+    font-weight: 300;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+}
+
+.dial-value .unit {
+    margin-left: 0.15rem;
+    font-size: 0.35em;
+    font-weight: 500;
+    letter-spacing: 0;
+    vertical-align: super;
+    color: var(--text-muted);
+}
+
+.dial.is-pending .dial-value {
+    color: var(--accent);
+    animation: breathe 1.4s ease-in-out infinite;
+}
+
+.dial-sub {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.35rem;
+    padding: 0.25rem 0.7rem;
+    border-radius: 999px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+/* ---------- Stepper ---------- */
+.stepper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.25rem;
+    margin-top: -1.5rem;
+}
+
+.step-button {
+    display: grid;
+    place-items: center;
+    width: 4rem;
+    height: 4rem;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    color: var(--text);
+    background: var(--surface);
+    box-shadow: var(--shadow-control);
+    cursor: pointer;
+    transition: transform 120ms ease, background 150ms ease, color 150ms ease, border-color 150ms ease;
+    touch-action: manipulation;
+}
+
+.step-button:hover:not(:disabled) {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+}
+
+.step-button:active:not(:disabled) {
+    transform: scale(0.94);
+    background: var(--accent-soft);
+}
+
+.step-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.range {
+    min-width: 6.5rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Tiles ---------- */
+.details {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.tiles {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin: 0;
+}
+
+.tile {
+    padding: 0.85rem 1rem;
+    border-radius: var(--radius-md);
+    background: var(--surface-muted);
+}
+
+.tile dt {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.tile dd {
+    margin: 0.3rem 0 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ---------- Modes ---------- */
+.modes h3 {
+    margin: 0 0 0.6rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.mode-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.6rem;
+}
+
+.mode-button {
+    /* --accent comes from the button's own data-mode attribute (see "Mode theming"). */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    min-height: 4.6rem;
+    padding: 0.6rem 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text);
+    background: var(--surface);
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 550;
+    cursor: pointer;
+    transition: background 150ms ease, color 150ms ease, border-color 150ms ease, transform 120ms ease;
+    touch-action: manipulation;
+}
+
+.mode-button .icon {
+    color: var(--accent);
+}
+
+.mode-button:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.mode-button:active:not(:disabled) {
+    transform: scale(0.97);
+}
+
+.mode-button.is-active {
+    color: #fff;
+    background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 6px 18px -8px var(--accent);
+}
+
+.mode-button.is-active .icon {
+    color: #fff;
+}
+
+.mode-button:disabled:not(.is-active) {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.mode-button:disabled.is-active {
+    cursor: default;
+}
+
+/* ---------- Feedback ---------- */
+.feedback {
+    min-height: 2.6rem;
+    display: flex;
+    justify-content: center;
+}
+
+.feedback-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 1rem;
+    border-radius: 999px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    background: var(--surface-muted);
+    color: var(--text-muted);
+    animation: rise 200ms ease-out;
+}
+
+.feedback[data-kind="sending"] .feedback-content {
+    color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.feedback[data-kind="success"] .feedback-content {
+    color: var(--success);
+    background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+.feedback[data-kind="error"] .feedback-content {
+    color: var(--danger-text);
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.muted {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+/* ---------- Spinner & animations ---------- */
+.spinner {
+    display: inline-block;
+    width: 1.1rem;
+    height: 1.1rem;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+.spinner.large {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-width: 3px;
+    color: var(--mode-cool);
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 55%, transparent); }
+    70% { box-shadow: 0 0 0 0.45rem transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+@keyframes blink { 50% { opacity: 0.3; } }
+
+@keyframes breathe { 50% { opacity: 0.6; } }
+
+@keyframes rise {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before { animation: none !important; transition: none !important; }
+}
+
+@media (max-width: 420px) {
+    .step-button { width: 3.6rem; height: 3.6rem; }
+    .tile dd { font-size: 1.1rem; }
+}

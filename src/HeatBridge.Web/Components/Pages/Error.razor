@@ -1,0 +1,28 @@
+﻿@page "/Error"
+@using System.Diagnostics
+
+<PageTitle>Fel – HeatBridge</PageTitle>
+
+<section class="message-page">
+    <h1>Något gick fel</h1>
+    <p>Ett fel inträffade när sidan skulle visas. Försök igen om en stund.</p>
+
+    @if (ShowRequestId)
+    {
+        <p class="request-id">Referens: <code>@RequestId</code></p>
+    }
+
+    <p><a href="/">Till startsidan</a></p>
+</section>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId { get; set; }
+
+    private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+
+    protected override void OnInitialized() =>
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}

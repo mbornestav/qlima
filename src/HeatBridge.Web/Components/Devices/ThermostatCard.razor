@@ -1,0 +1,171 @@
+@using HeatBridge.Core.Devices
+
+<article class="thermostat" data-mode="@SwedishText.ModeKey(DisplayedMode)" data-status="@StatusKey"
+         aria-labelledby="@($"device-{_snapshot.DeviceId}")">
+    <header class="card-header">
+        <div class="identity">
+            <span class="device-badge"><Icon Name="@SwedishText.ModeIcon(DisplayedMode)" Size="22" /></span>
+            <div>
+                <h2 id="@($"device-{_snapshot.DeviceId}")">@_snapshot.DisplayName</h2>
+                <p class="subtitle">
+                    @(Climate is null ? "Värmepump" : SwedishText.ModeDescription(DisplayedMode))
+                </p>
+            </div>
+        </div>
+        <span class="status-pill" data-status="@StatusKey" role="status">
+            <span class="dot" aria-hidden="true"></span>@StatusLabel
+        </span>
+    </header>
+
+    @if (_snapshot.Status == ConnectionStatus.Offline)
+    {
+        <div class="banner banner-offline" role="alert" title="@_snapshot.LastError?.Detail">
+            <Icon Name="wifi-off" Size="20" />
+            <div>
+                <strong>Ingen kontakt med värmepumpen</strong>
+                <span>
+                    @SwedishText.ErrorMessage(_snapshot.LastError?.Kind ?? DeviceErrorKind.Unknown)
+                    @if (_snapshot.LastSuccessfulUpdate is not null)
+                    {
+                        <text> Visar värden från @SwedishText.Time(_snapshot.LastSuccessfulUpdate).</text>
+                    }
+                </span>
+            </div>
+        </div>
+    }
+
+    @if (Climate is null)
+    {
+        <div class="empty-state">
+            @if (_snapshot.Status == ConnectionStatus.Connecting)
+            {
+                <span class="spinner large" aria-hidden="true"></span>
+                <p>Hämtar data från värmepumpen…</p>
+            }
+            else
+            {
+                <p>Inga värden har kunnat läsas ännu. HeatBridge försöker igen automatiskt.</p>
+            }
+        </div>
+    }
+    else
+    {
+        var limits = Climate.Limits;
+        <div class="card-body">
+            <section class="dial-section" aria-label="Måltemperatur">
+                <div class="dial @(IsTargetPending ? "is-pending" : null)">
+                    <svg viewBox="0 0 240 240" class="dial-svg" aria-hidden="true">
+                        <circle class="dial-track" cx="120" cy="120" r="@DialRadius"
+                                stroke-dasharray="@ArcLength(1) @Circumference" transform="rotate(135 120 120)" />
+                        <circle class="dial-value-arc" cx="120" cy="120" r="@DialRadius"
+                                stroke-dasharray="@ArcLength(TargetFraction) @Circumference" transform="rotate(135 120 120)" />
+                        <circle class="dial-knob" cx="@KnobX" cy="@KnobY" r="11" />
+                    </svg>
+                    <div class="dial-center">
+                        <span class="dial-label">@(IsTargetPending ? "Ny måltemperatur" : "Måltemperatur")</span>
+                        <span class="dial-value">
+                            @SwedishText.Temperature(DisplayedTarget)<span class="unit">°C</span>
+                        </span>
+                        <span class="dial-sub">
+                            <Icon Name="@SwedishText.ModeIcon(DisplayedMode)" Size="16" />
+                            @SwedishText.ModeLabel(DisplayedMode)
+                        </span>
+                    </div>
+                </div>
+
+                <div class="stepper">
+                    <button type="button" class="step-button" @onclick="() => ChangeTarget(-1)" disabled="@(!CanDecrease)"
+                            aria-label="Sänk måltemperaturen med @SwedishText.Temperature(limits.Step) grader">
+                        <Icon Name="minus" Size="28" StrokeWidth="2.2" />
+                    </button>
+                    <span class="range" aria-label="Tillåtet intervall">
+                        @SwedishText.Temperature(limits.Minimum)–@SwedishText.Temperature(limits.Maximum) °C
+                    </span>
+                    <button type="button" class="step-button" @onclick="() => ChangeTarget(+1)" disabled="@(!CanIncrease)"
+                            aria-label="Höj måltemperaturen med @SwedishText.Temperature(limits.Step) grader">
+                        <Icon Name="plus" Size="28" StrokeWidth="2.2" />
+                    </button>
+                </div>
+            </section>
+
+            <section class="details">
+                <dl class="tiles">
+                    <div class="tile">
+                        <dt><Icon Name="home" Size="18" /> Inomhus</dt>
+                        <dd>@SwedishText.TemperatureWithUnit(Climate.CurrentTemperature)</dd>
+                    </div>
+                    <div class="tile">
+                        <dt><Icon Name="outdoor" Size="18" /> Utomhus</dt>
+                        <dd>@SwedishText.TemperatureWithUnit(_snapshot.OutdoorTemperature)</dd>
+                    </div>
+                    <div class="tile">
+                        <dt><Icon Name="fan" Size="18" /> Fläkt</dt>
+                        <dd>@SwedishText.FanModeLabel(Climate.FanMode)</dd>
+                    </div>
+                    <div class="tile">
+                        <dt><Icon Name="clock" Size="18" /> Uppdaterad</dt>
+                        <dd>@SwedishText.Time(_snapshot.LastSuccessfulUpdate)</dd>
+                    </div>
+                </dl>
+
+                <div class="modes">
+                    <h3 id="@($"modes-{_snapshot.DeviceId}")">Driftläge</h3>
+                    @if (AvailableModes.Count == 0)
+                    {
+                        <p class="muted">Hämtar vilka driftlägen värmepumpen stöder…</p>
+                    }
+                    else
+                    {
+                        <div class="mode-grid" role="radiogroup" aria-labelledby="@($"modes-{_snapshot.DeviceId}")">
+                            @foreach (var mode in AvailableModes)
+                            {
+                                var isActive = mode == DisplayedMode;
+                                var isSending = _pendingMode == mode;
+                                <button type="button" role="radio" aria-checked="@(isActive ? "true" : "false")"
+                                        class="mode-button @(isActive ? "is-active" : null)"
+                                        data-mode="@SwedishText.ModeKey(mode)"
+                                        disabled="@(!CanControl || _pendingMode is not null)"
+                                        title="@SwedishText.ModeDescription(mode)"
+                                        @onclick="() => SelectModeAsync(mode)">
+                                    @if (isSending)
+                                    {
+                                        <span class="spinner" aria-hidden="true"></span>
+                                    }
+                                    else
+                                    {
+                                        <Icon Name="@SwedishText.ModeIcon(mode)" Size="22" />
+                                    }
+                                    <span>@SwedishText.ModeLabel(mode)</span>
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            </section>
+        </div>
+    }
+
+    <footer class="feedback" data-kind="@(_feedback?.Kind.ToString().ToLowerInvariant())" aria-live="polite">
+        @if (_feedback is not null)
+        {
+            <span class="feedback-content" title="@_feedback.Detail">
+                @switch (_feedback.Kind)
+                {
+                    case FeedbackKind.Sending:
+                        <span class="spinner" aria-hidden="true"></span>
+                        break;
+                    case FeedbackKind.Success:
+                        <Icon Name="check" Size="18" StrokeWidth="2.4" />
+                        break;
+                    case FeedbackKind.Error:
+                        <Icon Name="alert" Size="18" />
+                        break;
+                    default:
+                        <Icon Name="clock" Size="18" />
+                        break;
+                }
+                @_feedback.Message
+            </span>
+        }
+    </footer>
+</article>

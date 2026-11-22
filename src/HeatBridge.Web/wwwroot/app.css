@@ -1,0 +1,137 @@
+/* ---------- Design tokens ---------- */
+:root {
+    color-scheme: light dark;
+
+    --bg: #f3f5f9;
+    --bg-accent: #e8eef8;
+    --surface: #ffffff;
+    --surface-muted: #f1f4f8;
+    --border: #e3e8ef;
+    --text: #0f172a;
+    --text-muted: #64748b;
+
+    --mode-heat: #ea6a1f;
+    --mode-cool: #2f7de1;
+    --mode-auto: #0f9f8f;
+    --mode-dry: #0891b2;
+    --mode-fan: #7c6cd8;
+    --mode-off: #8492a6;
+
+    --success: #16a34a;
+    --danger: #dc2626;
+    --danger-text: #b91c1c;
+
+    --radius-md: 0.9rem;
+    --radius-xl: 1.75rem;
+    --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 12px 40px -12px rgb(15 23 42 / 0.14);
+    --shadow-control: 0 1px 2px rgb(15 23 42 / 0.06), 0 4px 12px -4px rgb(15 23 42 / 0.12);
+
+    --font: "Inter", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #0b1020;
+        --bg-accent: #111a30;
+        --surface: #141b2d;
+        --surface-muted: #1c2539;
+        --border: #263149;
+        --text: #e7ecf5;
+        --text-muted: #94a3b8;
+        --danger-text: #fca5a5;
+        --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 18px 48px -16px rgb(0 0 0 / 0.6);
+        --shadow-control: 0 1px 2px rgb(0 0 0 / 0.4);
+    }
+}
+
+/* ---------- Base ---------- */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+html {
+    -webkit-text-size-adjust: 100%;
+}
+
+body {
+    margin: 0;
+    min-height: 100dvh;
+    font-family: var(--font);
+    font-size: 16px;
+    line-height: 1.45;
+    color: var(--text);
+    background:
+        radial-gradient(1200px 600px at 10% -10%, var(--bg-accent), transparent 60%),
+        var(--bg);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+}
+
+button {
+    font: inherit;
+}
+
+:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--mode-cool) 55%, transparent);
+    outline-offset: 2px;
+}
+
+h1:focus {
+    outline: none;
+}
+
+.icon {
+    flex: none;
+}
+
+.message-page {
+    padding: 2rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    background: var(--surface);
+    text-align: center;
+}
+
+.message-page h1 {
+    margin-top: 0;
+    font-size: 1.5rem;
+}
+
+.message-page a {
+    color: var(--mode-cool);
+    font-weight: 600;
+}
+
+/* ---------- Blazor framework UI ---------- */
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    inset: auto 1rem 1rem 1rem;
+    z-index: 1000;
+    padding: 0.9rem 1.25rem;
+    border-radius: var(--radius-md);
+    color: #fff;
+    background: var(--danger);
+    box-shadow: var(--shadow-card);
+}
+
+#blazor-error-ui a {
+    color: #fff;
+    font-weight: 600;
+}
+
+#blazor-error-ui .dismiss {
+    float: right;
+    cursor: pointer;
+}
+
+.blazor-error-boundary {
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    color: #fff;
+    background: var(--danger);
+}
+
+.blazor-error-boundary::after {
+    content: "Ett fel inträffade.";
+}

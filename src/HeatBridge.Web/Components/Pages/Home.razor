@@ -1,0 +1,27 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@inject DeviceRegistry Registry
+
+<PageTitle>HeatBridge</PageTitle>
+
+<h1 class="visually-hidden">Mina värmepumpar</h1>
+
+@if (Registry.Devices.Count == 0)
+{
+    <section class="no-devices">
+        <h2>Inga värmepumpar är konfigurerade</h2>
+        <p>
+            Lägg till en enhet under <code>HeatBridge:Devices</code> i <code>appsettings.Development.json</code>
+            eller <code>appsettings.Local.json</code> och starta om programmet.
+        </p>
+    </section>
+}
+else
+{
+    <div class="device-list">
+        @foreach (var session in Registry.Devices)
+        {
+            <ThermostatCard @key="session.DeviceId" Session="session" />
+        }
+    </div>
+}

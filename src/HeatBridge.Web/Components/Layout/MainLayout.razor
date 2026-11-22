@@ -1,0 +1,27 @@
+﻿@inherits LayoutComponentBase
+
+<div class="shell">
+    <header class="topbar">
+        <a class="brand" href="/">
+            <span class="brand-mark"><HeatBridge.Web.Components.Devices.Icon Name="logo" Size="22" StrokeWidth="2" /></span>
+            <span class="brand-text">
+                <span class="brand-name">HeatBridge</span>
+                <span class="brand-tagline">Värmepumpar – lokalt och öppet</span>
+            </span>
+        </a>
+    </header>
+
+    <main class="content">
+        @Body
+    </main>
+
+    <footer class="footer">
+        Körs lokalt på din dator · ingen molntjänst inblandad
+    </footer>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    Ett oväntat fel inträffade.
+    <a href="." class="reload">Ladda om</a>
+    <span class="dismiss" aria-label="Stäng">✕</span>
+</div>
