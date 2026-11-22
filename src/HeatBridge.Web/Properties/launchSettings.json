@@ -9,6 +9,17 @@
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
+    },
+    "http-agent": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "http://localhost:5171",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "HeatBridge__RemoteAgents__Enabled": "true",
+        "HeatBridge__Devices__0__Transport": "Agent"
+      }
     }
   }
 }

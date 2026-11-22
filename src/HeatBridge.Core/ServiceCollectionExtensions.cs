@@ -8,7 +8,8 @@ public static class ServiceCollectionExtensions
 {
     /// <summary>
     /// Registers the device registry and its dependencies. Device integrations (e.g. ESPHome)
-    /// register their <see cref="Devices.IClimateDevice"/> instances separately.
+    /// register their <see cref="Devices.IClimateDevice"/> instances separately, and remote
+    /// transports register an <see cref="IDeviceSessionSource"/>.
     /// Configure <see cref="HeatBridgeOptions"/> with the options pattern.
     /// </summary>
     public static IServiceCollection AddHeatBridgeCore(this IServiceCollection services)
@@ -18,6 +19,15 @@ public static class ServiceCollectionExtensions
         services.AddOptions<HeatBridgeOptions>().ValidateDataAnnotations().ValidateOnStart();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<DeviceRegistry>();
+        return services;
+    }
+
+    /// <summary>Adds the background service that polls all locally reachable devices.</summary>
+    public static IServiceCollection AddDevicePolling(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddHostedService<DevicePollingService>();
         return services;
     }
 }

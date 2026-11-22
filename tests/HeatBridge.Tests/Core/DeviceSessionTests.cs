@@ -215,7 +215,7 @@ public class DeviceSessionTests
         var options = Microsoft.Extensions.Options.Options.Create(new HeatBridgeOptions());
 
         Assert.Throws<InvalidOperationException>(() =>
-            new DeviceRegistry([new FakeClimateDevice(), new FakeClimateDevice()], options, TimeProvider.System, NullLoggerFactory.Instance));
+            new DeviceRegistry([new FakeClimateDevice(), new FakeClimateDevice()], [], options, TimeProvider.System, NullLoggerFactory.Instance));
     }
 
     private DeviceSession CreateSession() =>

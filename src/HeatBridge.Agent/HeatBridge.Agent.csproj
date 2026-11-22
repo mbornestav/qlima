@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <RootNamespace>HeatBridge.Agent</RootNamespace>
+    <AssemblyName>HeatBridge.Agent</AssemblyName>
+    <Description>HeatBridge Agent: connects locally reachable climate devices to a HeatBridge server over an outbound WebSocket.</Description>
+    <Version>0.2.0</Version>
+    <UserSecretsId>heatbridge-agent</UserSecretsId>
+
+    <!-- Small footprint for a Raspberry Pi with ~1 GB RAM. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Trimming is intentionally NOT enabled: it has not been verified with this code base. -->
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HeatBridge.Core\HeatBridge.Core.csproj" />
+    <ProjectReference Include="..\HeatBridge.EspHome\HeatBridge.EspHome.csproj" />
+    <ProjectReference Include="..\HeatBridge.Protocol\HeatBridge.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Development settings are for running on the dev machine only; the Pi reads /etc/heatbridge/agent.json. -->
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HeatBridge.Tests" />
+  </ItemGroup>
+
+</Project>

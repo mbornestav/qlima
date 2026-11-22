@@ -3,11 +3,11 @@ using HeatBridge.Core.Devices;
 namespace HeatBridge.Tests.TestSupport;
 
 /// <summary>In-memory climate device for testing application services.</summary>
-internal sealed class FakeClimateDevice : IClimateDevice
+internal sealed class FakeClimateDevice(string id = "fake", string displayName = "Fake") : IClimateDevice
 {
-    public string Id => "fake";
+    public string Id { get; } = id;
 
-    public string DisplayName => "Fake";
+    public string DisplayName { get; } = displayName;
 
     public ClimateState State { get; set; } = new()
     {
@@ -28,7 +28,8 @@ internal sealed class FakeClimateDevice : IClimateDevice
 
     public DeviceCommunicationException? ReadFailure { get; set; }
 
-    public DeviceCommunicationException? CommandFailure { get; set; }
+    /// <summary>Thrown by commands; may be any exception to simulate bugs as well as communication errors.</summary>
+    public Exception? CommandFailure { get; set; }
 
     /// <summary>When set, commands wait for this task before completing.</summary>
     public Task? CommandBarrier { get; set; }

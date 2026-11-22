@@ -3,7 +3,13 @@
   <PropertyGroup>
     <RootNamespace>HeatBridge.Web</RootNamespace>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!-- Development-only secrets such as agent SecretHash values are kept in user secrets (see README). -->
+    <UserSecretsId>heatbridge-web</UserSecretsId>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HeatBridge.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <Content Update="appsettings.Local.example.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
@@ -12,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\HeatBridge.Core\HeatBridge.Core.csproj" />
     <ProjectReference Include="..\HeatBridge.EspHome\HeatBridge.EspHome.csproj" />
+    <ProjectReference Include="..\HeatBridge.Protocol\HeatBridge.Protocol.csproj" />
   </ItemGroup>
 
 </Project>

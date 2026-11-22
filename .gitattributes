@@ -1,0 +1,12 @@
+# Default: let Git normalise text files.
+* text=auto
+
+# Files executed or parsed on Linux must keep LF line endings, also on Windows checkouts.
+*.sh text eol=lf
+deploy/agent/linux/** text eol=lf
+
+# PowerShell scripts are fine with CRLF.
+*.ps1 text eol=crlf
+
+*.png binary
+*.jpg binary

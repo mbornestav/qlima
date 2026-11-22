@@ -1,0 +1,60 @@
+[Unit]
+Description=HeatBridge Agent (connects local heat pumps to the HeatBridge server)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=notify
+User=heatbridge
+Group=heatbridge
+WorkingDirectory=/opt/heatbridge/agent/current
+ExecStart=/opt/heatbridge/agent/current/HeatBridge.Agent
+
+# Configuration: non-secret settings in /etc/heatbridge/agent.json, optional overrides in agent.env.
+Environment=DOTNET_ENVIRONMENT=Production
+Environment=HEATBRIDGE_AGENT_CONFIG=/etc/heatbridge/agent.json
+Environment=DOTNET_EnableDiagnostics=0
+Environment=DOTNET_gcServer=0
+EnvironmentFile=-/etc/heatbridge/agent.env
+
+# The secret is passed as a systemd credential: the file stays root-only (0600) and the service reads it from
+# $CREDENTIALS_DIRECTORY/agent-secret. It never appears in the unit, the environment or the process list.
+LoadCredential=agent-secret:/etc/heatbridge/agent-secret
+
+Restart=always
+RestartSec=5
+# Exit code 78 means "invalid configuration": do not restart in a loop, fix the configuration instead.
+RestartPreventExitStatus=78
+TimeoutStopSec=20
+
+# Resource limits for a Raspberry Pi with ~1 GB RAM.
+MemoryHigh=160M
+MemoryMax=256M
+TasksMax=64
+
+# Hardening. The agent needs no inbound ports, no writable files and no privileges.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+UMask=0077
+# MemoryDenyWriteExecute is intentionally not set: the .NET JIT needs it disabled.
+
+[Install]
+WantedBy=multi-user.target

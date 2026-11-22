@@ -21,6 +21,9 @@ public enum DeviceErrorKind
 
     /// <summary>The request was rejected locally, e.g. because it violates the device limits.</summary>
     InvalidRequest,
+
+    /// <summary>The HeatBridge Agent that reaches this device is not connected.</summary>
+    AgentUnavailable,
 }
 
 /// <summary>A device communication problem. The UI maps <see cref="Kind"/> to a localised message.</summary>

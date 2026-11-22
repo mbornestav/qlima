@@ -17,7 +17,7 @@ namespace HeatBridge.Core.Services;
 /// periodically; a future server-sent events (SSE) listener can feed the same session instead.
 /// </para>
 /// </summary>
-public sealed partial class DeviceSession : IDisposable
+public sealed partial class DeviceSession : IDeviceSession, IDisposable
 {
     private readonly IClimateDevice _device;
     private readonly HeatBridgeOptions _options;

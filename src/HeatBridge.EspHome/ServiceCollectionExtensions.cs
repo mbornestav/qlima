@@ -14,10 +14,21 @@ public static class ServiceCollectionExtensions
     /// <exception cref="InvalidOperationException">The device configuration is invalid.</exception>
     public static IServiceCollection AddEspHomeDevices(this IServiceCollection services, IConfiguration devicesSection)
     {
-        ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(devicesSection);
 
-        var devices = devicesSection.Get<List<EspHomeDeviceOptions>>() ?? [];
+        return services.AddEspHomeDevices(devicesSection.Get<List<EspHomeDeviceOptions>>() ?? []);
+    }
+
+    /// <summary>
+    /// Registers one <see cref="IClimateDevice"/> per entry in <paramref name="devices"/> and the HTTP
+    /// client used to talk to them.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The device configuration is invalid.</exception>
+    public static IServiceCollection AddEspHomeDevices(this IServiceCollection services, IReadOnlyCollection<EspHomeDeviceOptions> devices)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(devices);
+
         var errors = devices.SelectMany(device => device.Validate()).ToList();
         if (errors.Count > 0)
         {
@@ -27,14 +38,14 @@ public static class ServiceCollectionExtensions
 
         services.AddHttpClient(EspHomeClient.HttpClientName, client =>
             {
-                client.DefaultRequestHeaders.UserAgent.ParseAdd("HeatBridge/0.1");
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("HeatBridge/0.2");
 
                 // Per-request timeouts are enforced by EspHomeClient; this is only a safety net.
                 client.Timeout = TimeSpan.FromSeconds(60);
             })
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
             {
-                // Devices live on the local network (or behind a VPN later); never route them through a proxy.
+                // Devices live on the local network; never route them through a proxy.
                 UseProxy = false,
                 ConnectTimeout = TimeSpan.FromSeconds(5),
                 PooledConnectionLifetime = TimeSpan.FromMinutes(2),

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>HeatBridge.Protocol</RootNamespace>
+    <Description>Wire protocol between HeatBridge Agents and the HeatBridge server (JSON over WebSockets).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HeatBridge.Core\HeatBridge.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HeatBridge.Tests" />
+  </ItemGroup>
+
+</Project>

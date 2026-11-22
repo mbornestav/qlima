@@ -487,3 +487,5 @@ appsettings.Local.json
 # Local Claude Code / editor settings
 .claude/settings.local.json
 .claude/launch.json
+# Local agent overrides when running the agent on the development computer
+src/HeatBridge.Agent/agent.local.json

@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
@@ -20,6 +21,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\HeatBridge.Core\HeatBridge.Core.csproj" />
     <ProjectReference Include="..\..\src\HeatBridge.EspHome\HeatBridge.EspHome.csproj" />
+    <ProjectReference Include="..\..\src\HeatBridge.Protocol\HeatBridge.Protocol.csproj" />
+    <ProjectReference Include="..\..\src\HeatBridge.Agent\HeatBridge.Agent.csproj" />
+    <ProjectReference Include="..\..\src\HeatBridge.Web\HeatBridge.Web.csproj" />
   </ItemGroup>
 
 </Project>

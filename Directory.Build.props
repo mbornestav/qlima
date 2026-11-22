@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <!-- Symbols inside the assemblies: line numbers in stack traces, no loose .pdb files in releases. -->
+    <DebugType>embedded</DebugType>
     <Authors>HeatBridge contributors</Authors>
     <Product>HeatBridge</Product>
   </PropertyGroup>

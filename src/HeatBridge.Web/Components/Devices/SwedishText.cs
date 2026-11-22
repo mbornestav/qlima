@@ -83,6 +83,7 @@ internal static class SwedishText
         DeviceErrorKind.InvalidResponse => "Värmepumpen skickade ett oväntat svar.",
         DeviceErrorKind.NotConfirmed => "Värmepumpen bekräftade inte ändringen. Försök igen.",
         DeviceErrorKind.InvalidRequest => "Värdet stöds inte av värmepumpen.",
+        DeviceErrorKind.AgentUnavailable => "HeatBridge-agenten på platsen är inte ansluten.",
         _ => "Ett okänt fel inträffade.",
     };
 

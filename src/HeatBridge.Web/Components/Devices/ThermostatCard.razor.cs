@@ -44,7 +44,7 @@ public sealed partial class ThermostatCard : IDisposable
     }
 
     [Parameter, EditorRequired]
-    public DeviceSession Session { get; set; } = default!;
+    public IDeviceSession Session { get; set; } = default!;
 
     private ClimateState? Climate => _snapshot.Climate;
 

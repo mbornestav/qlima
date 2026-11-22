@@ -1,0 +1,20 @@
+{
+  "HeatBridge": {
+    "Agent": {
+      "AgentId": "printpi",
+
+      "ServerUrl": "ws://127.0.0.1:5172/agent/connect",
+      "AllowInsecureLoopback": true
+    },
+    "Devices": [
+      {
+        "Id": "qlima-skane",
+        "Name": "Qlima Skåne",
+        "BaseUrl": "http://192.168.50.215",
+        "ClimateEntity": "air_conditioner",
+        "OutdoorTemperatureSensor": "air_conditioner_outdoor_temperature",
+        "RequestTimeout": "00:00:05"
+      }
+    ]
+  }
+}

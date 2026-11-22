@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# heatbridge-agentctl - manage the HeatBridge Agent service on this machine.
+# Installed to /usr/local/sbin by install.sh. Run "heatbridge-agentctl help" for usage.
+set -euo pipefail
+
+readonly SERVICE=heatbridge-agent
+readonly SERVICE_USER=heatbridge
+readonly INSTALL_ROOT=/opt/heatbridge/agent
+readonly RELEASES="$INSTALL_ROOT/releases"
+readonly CONFIG_DIR=/etc/heatbridge
+readonly CONFIG_FILE="$CONFIG_DIR/agent.json"
+readonly ENV_FILE="$CONFIG_DIR/agent.env"
+readonly SECRET_FILE="$CONFIG_DIR/agent-secret"
+readonly UNIT_PATH=/etc/systemd/system/$SERVICE.service
+
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+need_root() { [[ $EUID -eq 0 ]] || die "This command must be run as root (use sudo)."; }
+
+usage() {
+    cat <<EOF
+Usage: heatbridge-agentctl <command> [arguments]
+
+Service
+  status                  Show service status
+  start | stop | restart  Control the service
+  enable | disable        Start/stop now and on boot
+  logs [journalctl args]  Show logs (default: last 100 lines); e.g. "logs -f" to follow
+
+Configuration
+  check-config [dir]      Validate configuration with the current (or given) release
+  new-secret [--force]    Generate a new agent secret (root-only file) and print its hash for the server
+  set-secret              Store an existing secret (read from the terminal or stdin)
+  show-hash               Print the hash of the stored secret (register it on the server)
+
+Releases
+  versions                List installed releases
+  rollback [version]      Switch to the previous (or given) release and restart
+
+Removal
+  uninstall [--purge]     Remove the service and application; --purge also removes config and user
+
+Files
+  $CONFIG_FILE   settings (devices, server URL)
+  $ENV_FILE    optional environment overrides
+  $SECRET_FILE  agent secret (root only, passed via systemd credential)
+EOF
+}
+
+cmd_logs() {
+    if [[ $# -eq 0 ]]; then
+        journalctl -u "$SERVICE" -n 100 --no-pager
+    else
+        journalctl -u "$SERVICE" "$@"
+    fi
+}
+
+cmd_check_config() {
+    need_root
+    local dir="${1:-$INSTALL_ROOT/current}"
+    [[ -x "$dir/HeatBridge.Agent" ]] || die "No agent binary in $dir."
+    [[ -f "$CONFIG_FILE" ]] || die "$CONFIG_FILE does not exist."
+    (
+        set -a
+        # shellcheck disable=SC1090
+        [[ -f "$ENV_FILE" ]] && . "$ENV_FILE"
+        set +a
+        export DOTNET_ENVIRONMENT="${DOTNET_ENVIRONMENT:-Production}"
+        export HEATBRIDGE_AGENT_CONFIG="$CONFIG_FILE"
+        export HeatBridge__Agent__SecretFile="$SECRET_FILE"
+        export DOTNET_EnableDiagnostics=0
+        cd "$dir"
+        "$dir/HeatBridge.Agent" --check-config
+    )
+}
+
+write_secret() {
+    local secret="$1"
+    (( ${#secret} >= 32 )) || die "The secret must be at least 32 characters."
+    install -d -m 0750 -o root -g "$SERVICE_USER" "$CONFIG_DIR"
+    (umask 077 && printf '%s' "$secret" > "$SECRET_FILE.tmp")
+    chown root:root "$SECRET_FILE.tmp"
+    chmod 0600 "$SECRET_FILE.tmp"
+    mv -f "$SECRET_FILE.tmp" "$SECRET_FILE"
+}
+
+cmd_new_secret() {
+    need_root
+    if [[ -s "$SECRET_FILE" && "${1:-}" != "--force" ]]; then
+        die "A secret already exists. Use 'new-secret --force' to replace it (the hash on the server must then be updated)."
+    fi
+    local secret
+    secret="$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')"
+    write_secret "$secret"
+    unset secret
+    echo "New agent secret stored in $SECRET_FILE (readable by root only)."
+    echo "Register this hash for the agent on the HeatBridge server (the hash is not secret):"
+    echo
+    cmd_show_hash
+}
+
+cmd_set_secret() {
+    need_root
+    local secret
+    if [[ -t 0 ]]; then
+        read -r -s -p "Agent secret: " secret
+        echo
+    else
+        read -r secret
+    fi
+    write_secret "$secret"
+    unset secret
+    echo "Secret stored in $SECRET_FILE. Hash for the server:"
+    cmd_show_hash
+}
+
+cmd_show_hash() {
+    need_root
+    [[ -s "$SECRET_FILE" ]] || die "No secret stored yet. Run: heatbridge-agentctl new-secret"
+    printf 'sha256:%s\n' "$(sha256sum < "$SECRET_FILE" | cut -d' ' -f1)"
+}
+
+cmd_versions() {
+    local current previous dir name marker
+    current="$(readlink -f "$INSTALL_ROOT/current" 2>/dev/null || true)"
+    previous="$(readlink -f "$INSTALL_ROOT/previous" 2>/dev/null || true)"
+    [[ -d "$RELEASES" ]] || die "No releases installed."
+    while IFS= read -r dir; do
+        name="$(basename "$dir")"
+        marker=""
+        [[ "$dir" == "$current" ]] && marker=" (current)"
+        [[ "$dir" == "$previous" ]] && marker=" (previous)"
+        echo "$name$marker"
+    done < <(find "$RELEASES" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%T@ %p\n' | sort -rn | cut -d' ' -f2-)
+}
+
+cmd_rollback() {
+    need_root
+    local current target
+    current="$(readlink -f "$INSTALL_ROOT/current" 2>/dev/null || true)"
+    if [[ $# -gt 0 ]]; then
+        [[ "$1" =~ ^[A-Za-z0-9._+-]+$ ]] || die "Invalid version '$1'."
+        target="$RELEASES/$1"
+    else
+        target="$(readlink -f "$INSTALL_ROOT/previous" 2>/dev/null || true)"
+        [[ -n "$target" ]] || die "No previous release recorded. Use: heatbridge-agentctl rollback <version> (see 'versions')."
+    fi
+    [[ -x "$target/HeatBridge.Agent" ]] || die "Release $(basename "$target") is not installed."
+    [[ "$target" != "$current" ]] || die "Release $(basename "$target") is already active."
+
+    cmd_check_config "$target" || die "Configuration is not valid for $(basename "$target"); nothing changed."
+    ln -sfn "$target" "$INSTALL_ROOT/current.new" && mv -Tf "$INSTALL_ROOT/current.new" "$INSTALL_ROOT/current"
+    if [[ -n "$current" ]]; then
+        ln -sfn "$current" "$INSTALL_ROOT/previous.new" && mv -Tf "$INSTALL_ROOT/previous.new" "$INSTALL_ROOT/previous"
+    fi
+    systemctl restart "$SERVICE"
+    echo "Rolled back to $(basename "$target") (previous: $(basename "${current:-none}"))."
+}
+
+cmd_uninstall() {
+    need_root
+    local purge=false
+    [[ "${1:-}" == "--purge" ]] && purge=true
+    read -r -p "Remove the HeatBridge Agent service and application$($purge && echo ', configuration and user')? [y/N] " answer
+    [[ "$answer" =~ ^[Yy]$ ]] || die "Aborted."
+    systemctl disable --now "$SERVICE" 2>/dev/null || true
+    rm -f "$UNIT_PATH"
+    systemctl daemon-reload
+    rm -rf "$INSTALL_ROOT"
+    rmdir /opt/heatbridge 2>/dev/null || true
+    if $purge; then
+        rm -rf "$CONFIG_DIR"
+        userdel "$SERVICE_USER" 2>/dev/null || true
+    fi
+    rm -f /usr/local/sbin/heatbridge-agentctl
+    echo "HeatBridge Agent removed$($purge && echo ' (including configuration)')."
+}
+
+command="${1:-help}"
+shift || true
+case "$command" in
+    status) systemctl --no-pager status "$SERVICE" ;;
+    start | stop | restart) need_root; systemctl "$command" "$SERVICE" ;;
+    enable) need_root; systemctl enable --now "$SERVICE" ;;
+    disable) need_root; systemctl disable --now "$SERVICE" ;;
+    logs) cmd_logs "$@" ;;
+    check-config) cmd_check_config "$@" ;;
+    new-secret) cmd_new_secret "$@" ;;
+    set-secret) cmd_set_secret ;;
+    show-hash) cmd_show_hash ;;
+    versions) cmd_versions ;;
+    rollback) cmd_rollback "$@" ;;
+    uninstall) cmd_uninstall "$@" ;;
+    help | -h | --help) usage ;;
+    *) usage >&2; exit 2 ;;
+esac
