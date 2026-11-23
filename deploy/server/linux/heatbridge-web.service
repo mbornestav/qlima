@@ -1,0 +1,41 @@
+[Unit]
+Description=HeatBridge private dashboard
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=heatbridge-web
+Group=heatbridge-web
+WorkingDirectory=/opt/heatbridge/web/current/app
+ExecStart=/opt/heatbridge/web/current/app/HeatBridge.Web --urls http://127.0.0.1:5171
+Environment=DOTNET_ENVIRONMENT=Production
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=HEATBRIDGE_WEB_CONFIG=/etc/heatbridge-web/web.json
+Environment=HEATBRIDGE_WEB_STATE=/var/lib/heatbridge-web
+Environment=DOTNET_EnableDiagnostics=0
+Environment=DOTNET_gcServer=0
+StateDirectory=heatbridge-web
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+MemoryHigh=256M
+MemoryMax=384M
+TasksMax=128
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

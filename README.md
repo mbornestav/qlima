@@ -22,6 +22,7 @@ The dashboard (in Swedish) looks and works the same in both cases.
 - [Requirements](#requirements)
 - [Quick start (direct mode)](#quick-start-direct-mode)
 - [Configuration](#configuration)
+- [Hosting the dashboard on the Pi](#hosting-the-dashboard-on-the-pi)
 - [HeatBridge Agent](#heatbridge-agent)
 - [Deploying the agent to the Raspberry Pi (printpi)](#deploying-the-agent-to-the-raspberry-pi-printpi)
 - [Operating the agent](#operating-the-agent)
@@ -127,6 +128,118 @@ There are three ways to override settings without editing tracked files:
 `dotnet run` listens on `http://localhost:5171` only, and `AllowedHosts` is restricted to `localhost`,
 `127.0.0.1` and `[::1]`. The app has **no user authentication yet**, so do not bind it to `0.0.0.0`
 or expose it through your router.
+
+## Hosting the dashboard on the Pi
+
+The lowest-cost standalone setup runs **HeatBridge.Web on the existing Raspberry Pi**, controlling
+the Qlima through `Direct` transport. The web service runs continuously under systemd; your computer
+accesses it through an **SSH local tunnel**. There is no cloud bill, Docker, VPN or public dashboard.
+The web server listens only on `127.0.0.1:5171`. Keep your existing SSH connection and router settings.
+
+This deployment targets **64-bit ARM Linux with systemd** (Raspberry Pi OS/Debian). It requires
+Python 3, curl, OpenSSH and the standard Linux tools checked by the preflight. The self-contained
+release includes .NET but still requires the OS native libraries used by .NET, including ICU.
+`--check-config` validates that the executable runs on the actual Pi before changing services.
+
+### Build and deploy (PowerShell)
+
+Use the SSH hostname/IP, user and port that already work from your computer:
+
+```powershell
+# Read-only: inspect architecture, OS, RAM, free disk, ports and service status.
+.\deploy\server\deploy.ps1 -Target pi@<host> -Port <ssh-port> -PreflightOnly
+
+# Build the production Linux ARM64 package and its SHA-256 checksum.
+.\deploy\server\publish.ps1
+
+# Upload, verify and install. Enter SSH/sudo passwords in your terminal when prompted.
+.\deploy\server\deploy.ps1 -Target pi@<host> -Port <ssh-port>
+```
+
+Both deployment and tunnel scripts support `-IdentityFile` and `-JumpHost`; existing OpenSSH host
+aliases also work. Omit `-Port` for port 22. `-CopyOnly` uploads the archive and prints the install
+command. `-Package <path>` selects a particular archive. Deployment verifies its checksum remotely.
+
+The preflight requires **384 MiB available RAM**, **512 MiB free on `/opt`**, **64 MiB free on `/var`**,
+and **16 MiB free on `/tmp`**. Releases are staged on disk under `/opt`; `/tmp` only holds small
+configuration files, so a RAM-backed `/tmp` is supported. It stops if port 5171 is occupied by another service. Low resources do not cause it
+to stop existing services to make room. With an existing web server, these checks run before each update.
+
+On first installation, the installer imports device and polling settings from
+`/etc/heatbridge/agent.json` into `/etc/heatbridge-web/web.json`. It sets all devices to `Direct`,
+disables remote-agent endpoints and excludes credentials and agent connection settings. These JSON
+files must use standard JSON without comments or trailing commas. Existing web settings are never overwritten.
+
+The installer validates configuration, reads the devices without changing them, starts the server,
+and checks the private listener, dashboard and CSS/JavaScript assets. **Only after these checks pass
+does it stop and disable `heatbridge-agent`.** The agent's files and credentials remain intact.
+If activation fails, the installer restores the previous server release/unit and the services'
+previous running and boot-enabled states. Other services, including printing and SSH, are not modified.
+
+### Open the dashboard
+
+```powershell
+.\deploy\server\tunnel.ps1 -Target pi@<host> -Port <ssh-port>
+```
+
+Open <http://localhost:5171>. Keep the terminal open; Ctrl+C closes the tunnel while the server
+continues running on the Pi. Add `-Persistent` to reconnect after SSH drops. If port 5171 is already
+in use on your computer, add `-LocalPort 5173` and open `http://localhost:5173` instead.
+If SSH forwarding is denied, the script reports the failure; it does not alter sshd configuration.
+
+Check that live temperatures appear and that the dashboard reconnects after restarting only the web
+service. A Pi reboot is not required for installation or testing.
+
+### Configuration, operation and rollback (Pi)
+
+```bash
+sudo heatbridge-webctl status
+sudo heatbridge-webctl logs -f
+sudo heatbridge-webctl check-config   # no listener and no device polling
+sudo heatbridge-webctl verify         # private listener, dashboard/assets, read-only device checks
+sudo heatbridge-webctl restart
+sudo heatbridge-webctl versions
+sudo heatbridge-webctl rollback       # previous release; also accepts an installed version
+```
+
+The service is `heatbridge-web`, running as its own unprivileged user with automatic restart,
+`MemoryHigh=256M` and `MemoryMax=384M`. Configuration is root-owned, service-readable; persistent
+ASP.NET data-protection keys are readable only by the service user. Files are kept separately:
+
+| Location | Purpose |
+| --- | --- |
+| `/opt/heatbridge/web/releases/<version>` | Self-contained application and release management files |
+| `/opt/heatbridge/web/current`, `previous` | Atomic release links |
+| `/etc/heatbridge-web/web.json` | Device and private hosting configuration |
+| `/var/lib/heatbridge-web/keys` | Persistent data-protection keys, shared across updates/rollbacks |
+
+`HEATBRIDGE_WEB_CONFIG` selects the required external configuration file. When set, precedence is
+appsettings/local settings → external file → environment → command line. `HEATBRIDGE_WEB_STATE`
+selects the persistent state directory. The systemd unit supplies both; it runs in Production.
+Release packages exclude development/local configuration and secrets. Updates and rollbacks preserve
+configuration and keys. Releases are retained, so monitor free disk space before repeated updates.
+
+To return to the previous agent-based setup, first run `sudo heatbridge-webctl disable`, restore its
+server/tunnel connection, then run `sudo heatbridge-agentctl enable`. This avoids two pollers.
+For a future cloud server, use the preserved agent; public dashboard hosting still requires user authentication.
+
+Deployment helpers are tested independently of real services:
+
+```powershell
+python -B -m unittest discover -s deploy/server/tests -v
+```
+
+Run the same command with `python3` on Linux/WSL to include service activation, failure recovery and
+rollback simulations. Windows skips those Linux-specific tests. `publish.ps1` also verifies runtime
+files, static assets and the absence of development settings in every package.
+
+To smoke-test a production publish against a fake local device (including key persistence across
+restart), with port 5171 free on the development computer:
+
+```powershell
+dotnet publish src/HeatBridge.Web -c Release --self-contained false -o artifacts/server-smoke/app
+python -B deploy/server/tests/smoke-server.py artifacts/server-smoke/app
+```
 
 ## HeatBridge Agent
 
@@ -352,7 +465,7 @@ dotnet run --project src/HeatBridge.Agent                  # second terminal; us
 dotnet test
 ```
 
-229 automated tests, all using mocked HTTP, fake devices or in-memory WebSockets, with no network:
+232 automated .NET tests, all using mocked HTTP, fake devices or in-memory WebSockets, with no network:
 
 - **ESPHome:** JSON parsing (numbers as strings, `nan`, unexpected payloads), request building with
   invariant culture, timeouts, unreachable devices, `/events` parsing.

@@ -4,6 +4,7 @@
 # Files executed or parsed on Linux must keep LF line endings, also on Windows checkouts.
 *.sh text eol=lf
 deploy/agent/linux/** text eol=lf
+deploy/server/linux/** text eol=lf
 
 # PowerShell scripts are fine with CRLF.
 *.ps1 text eol=crlf

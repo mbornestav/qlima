@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <RootNamespace>HeatBridge.Web</RootNamespace>
+    <Version>0.2.0</Version>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
     <!-- Development-only secrets such as agent SecretHash values are kept in user secrets (see README). -->
     <UserSecretsId>heatbridge-web</UserSecretsId>
@@ -13,6 +14,7 @@
 
   <ItemGroup>
     <Content Update="appsettings.Local.example.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+    <Content Update="appsettings.Local.json;appsettings.Development.json" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
   <ItemGroup>

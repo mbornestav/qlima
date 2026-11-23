@@ -3,11 +3,21 @@ using HeatBridge.Core.Services;
 using HeatBridge.EspHome;
 using HeatBridge.Web.Agents;
 using HeatBridge.Web.Components;
+using HeatBridge.Web.Hosting;
+using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Optional, git-ignored file for machine-specific settings such as device addresses.
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
+WebConfiguration.AddMachineConfiguration(builder.Configuration, Environment.GetEnvironmentVariable("HEATBRIDGE_WEB_CONFIG"));
+
+if (Environment.GetEnvironmentVariable("HEATBRIDGE_WEB_STATE") is { Length: > 0 } stateDirectory)
+{
+    builder.Services.AddDataProtection()
+        .SetApplicationName("HeatBridge.Web")
+        .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(stateDirectory, "keys")));
+}
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -27,6 +37,15 @@ builder.Services.AddRemoteAgents(remoteAgents, topology);
 builder.Services.AddDevicePolling();
 
 var app = builder.Build();
+
+// Validate the complete configuration without starting a listener or polling a heat pump.
+if (args.Contains("--check-config", StringComparer.Ordinal))
+{
+    _ = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<HeatBridgeOptions>>().Value;
+    Console.WriteLine($"Configuration OK: {topology.DirectDevices.Count} direct device(s), {topology.RemoteDevices.Count} agent device(s).");
+    await app.DisposeAsync();
+    return;
+}
 
 if (!app.Environment.IsDevelopment())
 {

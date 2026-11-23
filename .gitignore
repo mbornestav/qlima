@@ -489,3 +489,5 @@ appsettings.Local.json
 .claude/launch.json
 # Local agent overrides when running the agent on the development computer
 src/HeatBridge.Agent/agent.local.json
+# Python deployment helpers/tests
+__pycache__/

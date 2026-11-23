@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+# Service management and transactional release activation. No heat-pump commands are sent here.
+set -euo pipefail
+# Keep administrative tools available even when sudo/SSH inherits a restricted user PATH.
+export PATH="${PATH:-/usr/local/bin:/usr/bin:/bin}:/usr/local/sbin:/usr/sbin:/sbin"
+readonly SERVICE=heatbridge-web
+readonly AGENT=heatbridge-agent
+readonly INSTALL_ROOT=/opt/heatbridge/web
+readonly RELEASES="$INSTALL_ROOT/releases"
+readonly CONFIG_DIR=/etc/heatbridge-web
+readonly CONFIG_FILE="$CONFIG_DIR/web.json"
+readonly UNIT=/etc/systemd/system/heatbridge-web.service
+readonly STATE=/var/lib/heatbridge-web
+
+fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+root() { [[ $EUID -eq 0 ]] || fail 'Run this command with sudo.'; }
+lock() { exec 9>/run/lock/heatbridge-web.lock; flock -n 9 || fail 'Another server deployment or rollback is running.'; }
+current_release() { readlink -e "$INSTALL_ROOT/current" 2>/dev/null || true; }
+valid_release() {
+    [[ "$1" == "$RELEASES/"* && "${1#"$RELEASES/"}" =~ ^[A-Za-z0-9][A-Za-z0-9.+_-]*$ && -x "$1/app/HeatBridge.Web" ]] || fail 'Invalid installed release.'
+}
+switch_link() { ln -sfn "$1" "$2.new"; mv -Tf "$2.new" "$2"; }
+was_started() { [[ "$1" == active || "$1" == activating || "$1" == reloading ]]; }
+
+check_config() {
+    local target="$1"
+    python3 "$target/server-config.py" validate "$CONFIG_FILE"
+    (
+        cd "$target/app"
+        runuser -u "$SERVICE" -- env -i PATH=/usr/bin:/bin DOTNET_ENVIRONMENT=Production ASPNETCORE_ENVIRONMENT=Production \
+            HEATBRIDGE_WEB_CONFIG="$CONFIG_FILE" HEATBRIDGE_WEB_STATE="$STATE" DOTNET_EnableDiagnostics=0 DOTNET_gcServer=0 \
+            "$target/app/HeatBridge.Web" --check-config --urls http://127.0.0.1:5171
+    )
+}
+
+verify_server() {
+    local target="$1" pid listeners state recv send address peer process
+    systemctl is-active --quiet "$SERVICE" || return 1
+    pid="$(systemctl show "$SERVICE" --property MainPID --value)"
+    [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+    listeners="$(ss -H -ltnp 'sport = :5171')"
+    [[ -n "$listeners" ]] || return 1
+    while read -r state recv send address peer process; do
+        [[ "$address" == 127.0.0.1:5171 && "$process" == *"pid=$pid,"* ]] || return 1
+    done <<< "$listeners"
+    python3 "$target/server-config.py" verify
+}
+
+restore_enabled() {
+    local service="$1" previous="$2"
+    case "$previous" in
+        enabled) systemctl enable "$service" ;;
+        enabled-runtime) systemctl enable --runtime "$service" ;;
+        disabled) systemctl disable "$service" ;;
+        *) : ;; # Never unmask or alter a static/nonexistent service.
+    esac
+}
+
+# A subshell confines traps to the transaction. Any error, including a failed agent stop, restores
+# the old links/unit and both services' previous states. Configuration and data keys are never replaced.
+activate() (
+    set -euo pipefail
+    local target="$1" old old_previous web_active web_enabled agent_active agent_enabled
+    old="$(current_release)"
+    old_previous="$(readlink -e "$INSTALL_ROOT/previous" 2>/dev/null || true)"
+    web_active="$(systemctl is-active "$SERVICE" || true)"
+    web_enabled="$(systemctl is-enabled "$SERVICE" 2>/dev/null || true)"
+    agent_active="$(systemctl is-active "$AGENT" || true)"
+    agent_enabled="$(systemctl is-enabled "$AGENT" 2>/dev/null || true)"
+    valid_release "$target"
+    [[ -z "$old" ]] || valid_release "$old"
+    check_config "$target"
+    python3 "$target/server-config.py" probe "$CONFIG_FILE"
+
+    recover() {
+        local result=$?
+        trap - EXIT HUP INT TERM
+        set +e
+        echo 'Activation failed; restoring the previous service states.' >&2
+        systemctl stop "$SERVICE"
+        if [[ -n "$old" ]]; then
+            switch_link "$old" "$INSTALL_ROOT/current"
+            install -m 0644 "$old/heatbridge-web.service" "$UNIT"
+        else
+            systemctl disable "$SERVICE"
+            rm -f "$INSTALL_ROOT/current" "$UNIT"
+        fi
+        if [[ -n "$old_previous" ]]; then
+            switch_link "$old_previous" "$INSTALL_ROOT/previous"
+        else
+            rm -f "$INSTALL_ROOT/previous"
+        fi
+        systemctl daemon-reload
+        if [[ -n "$old" ]]; then
+            restore_enabled "$SERVICE" "$web_enabled"
+            if was_started "$web_active"; then systemctl start "$SERVICE"; fi
+        fi
+        restore_enabled "$AGENT" "$agent_enabled"
+        if was_started "$agent_active"; then systemctl start "$AGENT"; fi
+        echo "Inspect: sudo journalctl -u $SERVICE -n 80 --no-pager" >&2
+        exit "$result"
+    }
+    trap recover EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' HUP TERM
+    switch_link "$target" "$INSTALL_ROOT/current"
+    install -m 0644 "$target/heatbridge-web.service" "$UNIT"
+    systemctl daemon-reload
+    systemctl enable "$SERVICE"
+    systemctl restart "$SERVICE"
+    local ready=false
+    for ((attempt=0; attempt<30; attempt++)); do
+        if verify_server "$target" >/dev/null 2>&1; then ready=true; break; fi
+        sleep 1
+    done
+    [[ "$ready" == true ]] || fail 'New server did not become healthy on its private listener.'
+    verify_server "$target"
+    # Stop the old poller only after the new dashboard and its assets work.
+    if was_started "$agent_active" || [[ "$agent_enabled" == enabled || "$agent_enabled" == enabled-runtime ]]; then
+        systemctl disable --now "$AGENT"
+        ! was_started "$(systemctl is-active "$AGENT" || true)" || fail 'The agent is still running or starting.'
+    fi
+    if [[ -n "$old" && "$old" != "$target" ]]; then switch_link "$old" "$INSTALL_ROOT/previous"; fi
+    trap - EXIT HUP INT TERM
+    printf 'Active server: %s\nPrivate listener: http://127.0.0.1:5171\n' "$(basename "$target")"
+)
+
+install_release() (
+    local source="$1" version target staging config_temp
+    bash "$source/preflight.sh"
+    version="$(tr -d '\r\n' < "$source/VERSION")"
+    [[ "$version" =~ ^[A-Za-z0-9][A-Za-z0-9.+_-]*$ ]] || fail 'Invalid release version.'
+    target="$RELEASES/$version"
+    [[ ! -e "$target" ]] || fail 'This release is already installed. Build a new package or use rollback.'
+    [[ ! -e "$UNIT" || -n "$(current_release)" ]] || fail 'An unmanaged heatbridge-web unit already exists.'
+
+    # Prepare and check imported JSON before creating a service/user or changing any existing config.
+    config_temp="$(mktemp -d /tmp/heatbridge-web.XXXXXX)"
+    trap 'rm -rf -- "$config_temp"' EXIT
+    if [[ -f "$CONFIG_FILE" ]]; then
+        python3 "$source/server-config.py" validate "$CONFIG_FILE"
+    else
+        python3 "$source/server-config.py" import /etc/heatbridge/agent.json "$config_temp/web.json"
+    fi
+    if ! id -u "$SERVICE" >/dev/null 2>&1; then
+        useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$SERVICE"
+    fi
+    install -d -m 0755 -o root -g root "$INSTALL_ROOT" "$RELEASES"
+    install -d -m 0750 -o root -g "$SERVICE" "$CONFIG_DIR"
+    install -d -m 0700 -o "$SERVICE" -g "$SERVICE" "$STATE"
+    if [[ ! -f "$CONFIG_FILE" ]]; then install -m 0640 -o root -g "$SERVICE" "$config_temp/web.json" "$CONFIG_FILE"; fi
+    staging="$(mktemp -d "$RELEASES/.staging.XXXXXX")"
+    cp -a "$source/." "$staging/"
+    chown -R root:root "$staging"
+    find "$staging" -type d -exec chmod 0755 {} +
+    find "$staging" -type f -exec chmod 0644 {} +
+    chmod 0755 "$staging/app/HeatBridge.Web"
+    mv -T "$staging" "$target"
+    # Stable launcher: management scripts and the unit always come from the active release.
+    printf '%s\n' '#!/usr/bin/env bash' 'exec bash /opt/heatbridge/web/current/heatbridge-webctl "$@"' > "$config_temp/launcher"
+    install -m 0755 -o root -g root "$config_temp/launcher" /usr/local/sbin/heatbridge-webctl
+    activate "$target"
+)
+
+command="${1:-help}"
+shift || true
+case "$command" in
+    install) root; lock; [[ $# == 1 ]] || fail 'install needs the extracted release directory.'; install_release "$1" ;;
+    status) systemctl --no-pager status "$SERVICE" ;;
+    logs) if [[ $# == 0 ]]; then journalctl -u "$SERVICE" -n 100 --no-pager; else journalctl -u "$SERVICE" "$@"; fi ;;
+    start | stop | restart) root; lock; systemctl "$command" "$SERVICE" ;;
+    enable) root; lock; systemctl enable --now "$SERVICE" ;;
+    disable) root; lock; systemctl disable --now "$SERVICE" ;;
+    check-config) root; check_config "$(current_release)" ;;
+    verify) root; target="$(current_release)"; verify_server "$target"; python3 "$target/server-config.py" probe "$CONFIG_FILE" ;;
+    versions) printf 'Current: %s\nPrevious: %s\n' "$(current_release)" "$(readlink -e "$INSTALL_ROOT/previous" || true)"; find "$RELEASES" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%f\n' ;;
+    rollback)
+        root; lock
+        if [[ $# == 0 ]]; then target="$(readlink -e "$INSTALL_ROOT/previous" 2>/dev/null || true)";
+        else [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9.+_-]*$ ]] || fail 'Invalid version.'; target="$RELEASES/$1"; fi
+        valid_release "$target"
+        [[ "$target" != "$(current_release)" ]] || fail 'Release is already active.'
+        activate "$target"
+        ;;
+    help | -h | --help)
+        cat <<'EOF'
+Usage: heatbridge-webctl <command>
+  status | logs [journalctl args]             Inspect the server
+  start | stop | restart | enable | disable   Control the service (sudo)
+  check-config                               Validate without polling (sudo)
+  verify                                     Check listener, dashboard/assets and device reads (sudo)
+  versions | rollback [version]              Inspect releases or roll back (sudo for rollback)
+Configuration: /etc/heatbridge-web/web.json
+Data-protection keys: /var/lib/heatbridge-web/keys
+The dashboard is private. Connect through deploy/server/tunnel.ps1.
+EOF
+        ;;
+    *) fail "Unknown command: $command" ;;
+esac
