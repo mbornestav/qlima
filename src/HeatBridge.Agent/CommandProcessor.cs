@@ -118,6 +118,10 @@ public sealed partial class CommandProcessor
             {
                 ClimateCommandKind.SetTargetTemperature => session.SetTargetTemperatureAsync(command.TargetTemperature!.Value, timeout.Token),
                 ClimateCommandKind.SetMode => session.SetModeAsync(command.Mode!.Value, timeout.Token),
+                ClimateCommandKind.SetFanMode => session.SetFanModeAsync(command.Option!, timeout.Token),
+                ClimateCommandKind.SetPreset => session.SetPresetAsync(command.Option!, timeout.Token),
+                ClimateCommandKind.SetSwingMode => session.SetSwingModeAsync(command.Option!.Value, timeout.Token),
+                ClimateCommandKind.Rediscover => session.RediscoverAsync(timeout.Token),
                 _ => Task.FromResult(CommandResult.Failed(DeviceErrorKind.InvalidRequest, "Unsupported command.", DateTimeOffset.UtcNow)),
             };
 

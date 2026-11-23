@@ -11,5 +11,9 @@ public sealed record EspHomeClimateCommand
 
     public ClimateMode? Mode { get; init; }
 
-    public bool IsEmpty => TargetTemperature is null && Mode is null;
+    public ClimateOption? FanMode { get; init; }
+    public ClimateOption? Preset { get; init; }
+    public string? SwingMode { get; init; }
+
+    public bool IsEmpty => TargetTemperature is null && Mode is null && FanMode is null && Preset is null && SwingMode is null;
 }

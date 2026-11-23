@@ -188,8 +188,9 @@ public class AgentHubTests
     }
 
     [Theory]
-    [InlineData(2, TestAgentServer.AgentId)]  // unsupported protocol version
-    [InlineData(1, "someone-else")]           // id does not match the credential
+    [InlineData(1, TestAgentServer.AgentId)]  // previous protocol version
+    [InlineData(3, TestAgentServer.AgentId)]  // unsupported future version
+    [InlineData(2, "someone-else")]           // id does not match the credential
     public async Task InvalidHello_IsRejected(int protocolVersion, string agentId)
     {
         await using var server = await TestAgentServer.StartAsync(["qlima"]);

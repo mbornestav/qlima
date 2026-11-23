@@ -28,6 +28,7 @@ public sealed class RemoteDeviceSession : IDeviceSession
     }
 
     public event EventHandler<DeviceSnapshot>? SnapshotChanged;
+    public event EventHandler<CommandCompletion>? CommandCompleted;
 
     public string DeviceId { get; }
 
@@ -53,7 +54,7 @@ public sealed class RemoteDeviceSession : IDeviceSession
             return Task.FromResult(Reject("The temperature is outside the range supported by the device."));
         }
 
-        return _hub.DispatchAsync(this, ClimateCommandKind.SetTargetTemperature, temperature, null, cancellationToken);
+        return DispatchAsync(ClimateCommandKind.SetTargetTemperature, temperature, null, null, cancellationToken);
     }
 
     public Task<CommandResult> SetModeAsync(ClimateMode mode, CancellationToken cancellationToken)
@@ -63,7 +64,33 @@ public sealed class RemoteDeviceSession : IDeviceSession
             return Task.FromResult(Reject($"Mode {mode} is not supported by the device."));
         }
 
-        return _hub.DispatchAsync(this, ClimateCommandKind.SetMode, null, mode, cancellationToken);
+        return DispatchAsync(ClimateCommandKind.SetMode, null, mode, null, cancellationToken);
+    }
+
+    public Task<CommandResult> SetFanModeAsync(ClimateOption selection, CancellationToken cancellationToken) =>
+        Snapshot.Capabilities.SupportsFan(selection)
+            ? DispatchAsync(ClimateCommandKind.SetFanMode, null, null, selection, cancellationToken)
+            : Task.FromResult(Reject("Unsupported fan mode."));
+
+    public Task<CommandResult> SetPresetAsync(ClimateOption selection, CancellationToken cancellationToken) =>
+        Snapshot.Capabilities.SupportsPreset(selection)
+            ? DispatchAsync(ClimateCommandKind.SetPreset, null, null, selection, cancellationToken)
+            : Task.FromResult(Reject("Unsupported preset."));
+
+    public Task<CommandResult> SetSwingModeAsync(string mode, CancellationToken cancellationToken) =>
+        Snapshot.Capabilities.SwingModes.Contains(mode, StringComparer.Ordinal)
+            ? DispatchAsync(ClimateCommandKind.SetSwingMode, null, null, new ClimateOption(mode), cancellationToken)
+            : Task.FromResult(Reject("Unsupported swing mode."));
+
+    public Task<CommandResult> RediscoverAsync(CancellationToken cancellationToken) =>
+        _hub.DispatchAsync(this, ClimateCommandKind.Rediscover, null, null, cancellationToken);
+
+    private async Task<CommandResult> DispatchAsync(ClimateCommandKind kind, double? temperature, ClimateMode? mode,
+        ClimateOption? selection, CancellationToken cancellationToken)
+    {
+        var result = await _hub.DispatchAsync(this, kind, temperature, mode, cancellationToken, selection).ConfigureAwait(false);
+        CommandCompleted?.Invoke(this, new CommandCompletion($"{kind}: {selection?.Value ?? mode?.ToString() ?? temperature?.ToString(System.Globalization.CultureInfo.InvariantCulture)}", result, _time.GetUtcNow()));
+        return result;
     }
 
     internal void ApplyRemote(DeviceSnapshotDto snapshot, DateTimeOffset receivedAt)

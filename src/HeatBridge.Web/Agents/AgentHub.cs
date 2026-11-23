@@ -132,7 +132,8 @@ public sealed partial class AgentHub : IDeviceSessionSource
 
     /// <summary>Sends a command to the device's agent and waits for the verified result.</summary>
     internal async Task<CommandResult> DispatchAsync(
-        RemoteDeviceSession device, ClimateCommandKind kind, double? temperature, ClimateMode? mode, CancellationToken cancellationToken)
+        RemoteDeviceSession device, ClimateCommandKind kind, double? temperature, ClimateMode? mode, CancellationToken cancellationToken,
+        ClimateOption? option = null)
     {
         if (!_connections.TryGetValue(device.AgentId, out var connection) || !connection.Welcomed || connection.IsClosing
             || !connection.AcceptedDevices.Contains(device.DeviceId))
@@ -140,7 +141,7 @@ public sealed partial class AgentHub : IDeviceSessionSource
             return Failed(DeviceErrorKind.AgentUnavailable, $"Agent '{device.AgentId}' is not connected.");
         }
 
-        var command = new ClimateCommandMessage(Guid.NewGuid(), device.DeviceId, kind, temperature, mode);
+        var command = new ClimateCommandMessage(Guid.NewGuid(), device.DeviceId, kind, temperature, mode, option);
         var pending = connection.Register(command.CommandId, device.DeviceId);
         try
         {

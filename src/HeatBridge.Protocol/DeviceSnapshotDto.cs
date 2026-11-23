@@ -12,6 +12,13 @@ public sealed record DeviceSnapshotDto(
     DateTimeOffset? LastSuccessfulUpdate = null,
     DeviceErrorDto? LastError = null)
 {
+    public IReadOnlyList<string> CustomFanModes { get; init; } = [];
+    public IReadOnlyList<string> Presets { get; init; } = [];
+    public IReadOnlyList<string> CustomPresets { get; init; } = [];
+    public IReadOnlyList<string> SwingModes { get; init; } = [];
+    public IReadOnlyList<DeviceEntity> Entities { get; init; } = [];
+    public IReadOnlyList<SensorReading> Sensors { get; init; } = [];
+
     public static DeviceSnapshotDto FromSnapshot(DeviceSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -25,7 +32,15 @@ public sealed record DeviceSnapshotDto(
             snapshot.LastSuccessfulUpdate,
             snapshot.LastError is { } error
                 ? new DeviceErrorDto(error.Kind, AgentProtocol.Truncate(error.Detail, AgentProtocol.MaxDetailLength), error.OccurredAt)
-                : null);
+                : null)
+        {
+            CustomFanModes = snapshot.Capabilities.CustomFanModes,
+            Presets = snapshot.Capabilities.Presets,
+            CustomPresets = snapshot.Capabilities.CustomPresets,
+            SwingModes = snapshot.Capabilities.SwingModes,
+            Entities = snapshot.Capabilities.Entities,
+            Sensors = snapshot.Sensors,
+        };
     }
 
     /// <summary>Converts back to a snapshot. Call only on validated DTOs.</summary>
@@ -36,7 +51,12 @@ public sealed record DeviceSnapshotDto(
         Status = Status,
         Climate = Climate?.ToState(),
         OutdoorTemperature = OutdoorTemperature,
-        Capabilities = new ClimateCapabilities { SupportedModes = SupportedModes, FanModes = FanModes },
+        Capabilities = new ClimateCapabilities
+        {
+            SupportedModes = SupportedModes, FanModes = FanModes, CustomFanModes = CustomFanModes,
+            Presets = Presets, CustomPresets = CustomPresets, SwingModes = SwingModes, Entities = Entities,
+        },
+        Sensors = Sensors,
         LastSuccessfulUpdate = LastSuccessfulUpdate,
         LastError = LastError is { } error ? new DeviceError(error.Kind, error.Detail, error.OccurredAt) : null,
     };

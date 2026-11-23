@@ -13,6 +13,8 @@ public sealed partial class EspHomeClimateDevice : IClimateDevice
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger _logger;
     private ClimateCapabilities? _capabilitiesFromRest;
+    private IReadOnlyList<SensorReading> _sensors = [];
+    private DateTimeOffset _nextSensors;
 
     public EspHomeClimateDevice(EspHomeDeviceOptions options, IHttpClientFactory httpClientFactory, ILogger<EspHomeClimateDevice> logger)
     {
@@ -35,30 +37,26 @@ public sealed partial class EspHomeClimateDevice : IClimateDevice
         var climate = await client.GetClimateAsync(cancellationToken).ConfigureAwait(false);
         if (climate.Capabilities is { IsKnown: true })
         {
-            _capabilitiesFromRest = climate.Capabilities;
+            _capabilitiesFromRest = climate.Capabilities with { Entities = _capabilitiesFromRest?.Entities ?? [] };
         }
 
-        return new DeviceReading(climate.State, await ReadOutdoorTemperatureAsync(client, cancellationToken).ConfigureAwait(false));
+        await ReadSensorsAsync(client, cancellationToken).ConfigureAwait(false);
+        return new DeviceReading(climate.State, await ReadOutdoorTemperatureAsync(client, cancellationToken).ConfigureAwait(false))
+        { Sensors = _sensors };
     }
 
     public async Task<ClimateCapabilities?> GetCapabilitiesAsync(CancellationToken cancellationToken)
     {
+        EspHomeClimatePayload? payload = null;
+        try { payload = await CreateClient().DiscoverAsync(cancellationToken).ConfigureAwait(false); }
+        catch (DeviceCommunicationException) when (_capabilitiesFromRest is not null || _options.SupportedModes.Count > 0) { }
+        var capabilities = payload?.Capabilities ?? _capabilitiesFromRest;
         if (_options.SupportedModes.Count > 0)
-        {
-            return new ClimateCapabilities
-            {
-                SupportedModes = _options.SupportedModes.Select(EspHomeClimateModes.Parse).Distinct().ToList(),
-            };
-        }
-
-        // Newer firmware includes supported modes in GET ?detail=all; older firmware only in /events.
-        if (_capabilitiesFromRest is not null)
-        {
-            return _capabilitiesFromRest;
-        }
-
-        var payload = await CreateClient().ReadClimateFromEventStreamAsync(cancellationToken).ConfigureAwait(false);
-        return payload?.Capabilities;
+            capabilities = (capabilities ?? ClimateCapabilities.Empty) with
+            { SupportedModes = _options.SupportedModes.Select(EspHomeClimateModes.Parse).Distinct().ToArray() };
+        _capabilitiesFromRest = capabilities;
+        _nextSensors = DateTimeOffset.MinValue;
+        return capabilities;
     }
 
     public Task SetTargetTemperatureAsync(double temperature, CancellationToken cancellationToken) =>
@@ -66,6 +64,38 @@ public sealed partial class EspHomeClimateDevice : IClimateDevice
 
     public Task SetModeAsync(ClimateMode mode, CancellationToken cancellationToken) =>
         CreateClient().SetClimateAsync(new EspHomeClimateCommand { Mode = mode }, cancellationToken);
+
+    public Task SetFanModeAsync(ClimateOption selection, CancellationToken cancellationToken) =>
+        CreateClient().SetClimateAsync(new EspHomeClimateCommand { FanMode = selection }, cancellationToken);
+
+    public Task SetPresetAsync(ClimateOption selection, CancellationToken cancellationToken) =>
+        CreateClient().SetClimateAsync(new EspHomeClimateCommand { Preset = selection }, cancellationToken);
+
+    public Task SetSwingModeAsync(string mode, CancellationToken cancellationToken) =>
+        CreateClient().SetClimateAsync(new EspHomeClimateCommand { SwingMode = mode }, cancellationToken);
+
+    private async Task ReadSensorsAsync(EspHomeClient client, CancellationToken cancellationToken)
+    {
+        if (DateTimeOffset.UtcNow < _nextSensors) return;
+        _nextSensors = DateTimeOffset.UtcNow.AddSeconds(60);
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        budget.CancelAfter(TimeSpan.FromSeconds(10));
+        var readings = new List<SensorReading>();
+        foreach (var entity in (_capabilitiesFromRest?.Entities ?? []).Where(e => e.Domain == "sensor").Take(16))
+        {
+            double? value = null;
+            DateTimeOffset? observed = null;
+            try
+            {
+                value = await client.GetSensorValueAsync(entity.Id[7..], budget.Token).ConfigureAwait(false);
+                if (value is not null) observed = DateTimeOffset.UtcNow;
+            }
+            catch (DeviceCommunicationException) { }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { }
+            readings.Add(new SensorReading(entity.Id, entity.Name, entity.Unit, value, observed));
+        }
+        _sensors = readings;
+    }
 
     private async Task<double?> ReadOutdoorTemperatureAsync(EspHomeClient client, CancellationToken cancellationToken)
     {

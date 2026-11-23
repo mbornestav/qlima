@@ -1,0 +1,62 @@
+@using HeatBridge.Web.Monitoring
+@using System.Globalization
+
+@if (Samples.Count == 0)
+{ <p class="muted">Historiken börjar samlas när HeatBridge körs. En avläsning sparas varje minut.</p> }
+else
+{
+    <div class="chart-legend"><span class="indoor">Inomhus</span><span class="target">Mål</span><span class="outdoor">Utomhus</span></div>
+    <svg class="temperature-chart" viewBox="0 0 800 240" role="img" aria-label="Temperaturhistorik i grader Celsius. Avbrott visas som luckor.">
+        <line x1="45" x2="785" y1="205" y2="205" stroke="var(--border)" />
+        <text x="0" y="25" fill="currentColor">@_max.ToString("0.#", SwedishText.Culture)°</text>
+        <text x="0" y="205" fill="currentColor">@_min.ToString("0.#", SwedishText.Culture)°</text>
+        <path d="@Path(s => s.Outdoor)" class="chart-line outdoor" />
+        <path d="@Path(s => s.Target)" class="chart-line target" />
+        <path d="@Path(s => s.Indoor)" class="chart-line indoor" />
+    </svg>
+    <div class="chart-axis"><span>@MonitoringStore.Local(From)</span><span>@MonitoringStore.Local(To)</span></div>
+    <details><summary>Visa de senaste 60 datapunkterna som tabell</summary>
+        <div class="table-scroll"><table><thead><tr><th>Tid</th><th>Inomhus</th><th>Mål</th><th>Utomhus</th></tr></thead><tbody>
+        @foreach (var sample in _points.TakeLast(60).Reverse())
+        { <tr><td>@MonitoringStore.Local(sample.At)</td><td>@SwedishText.TemperatureWithUnit(sample.Indoor)</td><td>@SwedishText.TemperatureWithUnit(sample.Target)</td><td>@SwedishText.TemperatureWithUnit(sample.Outdoor)</td></tr> }
+        </tbody></table></div>
+    </details>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<HistorySample> Samples { get; set; } = [];
+    [Parameter] public DateTimeOffset From { get; set; }
+    [Parameter] public DateTimeOffset To { get; set; }
+    private IReadOnlyList<HistorySample> _points = [];
+    private double _min, _max;
+    private int _bucketSeconds;
+    protected override void OnParametersSet()
+    {
+        _bucketSeconds = (To - From).TotalDays > 7 ? 1800 : (To - From).TotalDays > 1 ? 600 : 60;
+        _points = Samples.GroupBy(s => s.At.ToUnixTimeSeconds() / _bucketSeconds).Select(group =>
+        {
+            var ordered = group.ToArray();
+            var available = ordered.All(s => s.Available) && !ordered.Zip(ordered.Skip(1)).Any(p => p.Second.At - p.First.At > TimeSpan.FromSeconds(90));
+            return new HistorySample(ordered[0].At, available ? group.Average(s => s.Indoor) : null,
+                available ? group.Average(s => s.Outdoor) : null, available ? group.Average(s => s.Target) : null, available);
+        }).ToArray();
+        var values = _points.SelectMany(s => new[] { s.Indoor, s.Outdoor, s.Target }).OfType<double>().ToArray();
+        _min = values.Length > 0 ? Math.Floor(values.Min() - 1) : 0;
+        _max = values.Length > 0 ? Math.Ceiling(values.Max() + 1) : 30;
+    }
+    private string Path(Func<HistorySample, double?> value)
+    {
+        var path = new System.Text.StringBuilder();
+        DateTimeOffset? previous = null;
+        foreach (var sample in _points)
+        {
+            if (!sample.Available || value(sample) is not { } temperature) { previous = null; continue; }
+            var continuous = previous is { } at && sample.At - at <= TimeSpan.FromSeconds(_bucketSeconds + 30);
+            var x = 45 + (sample.At - From).TotalSeconds / Math.Max(1, (To - From).TotalSeconds) * 740;
+            var y = 205 - (temperature - _min) / (_max - _min) * 180;
+            path.Append(CultureInfo.InvariantCulture, $"{(continuous ? 'L' : 'M')}{x:0.##},{y:0.##} ");
+            previous = sample.At;
+        }
+        return path.ToString();
+    }
+}

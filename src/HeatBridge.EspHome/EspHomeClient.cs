@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.ServerSentEvents;
+using System.Text.Json;
 using HeatBridge.Core.Devices;
 
 namespace HeatBridge.EspHome;
@@ -67,8 +68,20 @@ public sealed class EspHomeClient
     /// connecting, including the lists of supported modes, which the REST API of older firmware omits.
     /// Returns <c>null</c> if no climate event arrives within <see cref="EspHomeDeviceOptions.DiscoveryTimeout"/>.
     /// </summary>
-    public async Task<EspHomeClimatePayload?> ReadClimateFromEventStreamAsync(CancellationToken cancellationToken)
+    public Task<EspHomeClimatePayload?> ReadClimateFromEventStreamAsync(CancellationToken cancellationToken) =>
+        ReadEventsAsync(false, cancellationToken);
+
+    public Task<EspHomeClimatePayload?> DiscoverAsync(CancellationToken cancellationToken) =>
+        ReadEventsAsync(true, cancellationToken);
+
+    private async Task<EspHomeClimatePayload?> ReadEventsAsync(bool inventory, CancellationToken cancellationToken)
     {
+        EspHomeClimatePayload? climate = null;
+        var entities = new Dictionary<string, DeviceEntity>(StringComparer.Ordinal);
+        EspHomeClimatePayload? Result() => climate is null ? null : climate with
+        {
+            Capabilities = (climate.Capabilities ?? ClimateCapabilities.Empty) with { Entities = entities.Values.ToArray() },
+        };
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(_device.DiscoveryTimeout);
 
@@ -89,16 +102,38 @@ public sealed class EspHomeClient
                 {
                     if (item.EventType == "state" && IsClimateEntity(EspHomeJsonParser.TryGetId(item.Data)))
                     {
-                        return EspHomeJsonParser.ParseClimate(item.Data);
+                        climate = EspHomeJsonParser.ParseClimate(item.Data);
+                        if (!inventory) return climate;
+                    }
+                    if (inventory && item.EventType == "state" && entities.Count < 32 && item.Data.Length < 16384)
+                    {
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(item.Data);
+                            var root = doc.RootElement;
+                            var id = root.GetProperty("id").GetString();
+                            if (id is null || id.Length > 100) continue;
+                            var split = id.IndexOfAny(['-', '/']);
+                            if (split <= 0) continue;
+                            var domain = id[..split];
+                            if (domain is not ("sensor" or "switch" or "button" or "climate")) continue;
+                            var name = root.TryGetProperty("name", out var n) ? n.GetString() : id;
+                            var unit = root.TryGetProperty("uom", out var u) ? u.GetString() : null;
+                            entities[id] = new DeviceEntity(id, (name ?? id)[..Math.Min((name ?? id).Length, 100)], domain, unit);
+                        }
+                        catch (Exception ex) when (ex is JsonException or InvalidOperationException or KeyNotFoundException)
+                        {
+                            // Malformed optional metadata cannot prevent climate discovery.
+                        }
                     }
                 }
             }
 
-            return null;
+            return Result();
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return null;
+            return Result();
         }
         catch (HttpRequestException ex)
         {

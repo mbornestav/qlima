@@ -88,6 +88,15 @@ public static class ProtocolValidator
             case ClimateCommandMessage command:
                 CommandId(errors, command.CommandId);
                 Identifier(errors, "deviceId", command.DeviceId);
+                if (command.Kind is ClimateCommandKind.SetFanMode or ClimateCommandKind.SetPreset or ClimateCommandKind.SetSwingMode)
+                {
+                    Text(errors, "option.value", command.Option?.Value, AgentProtocol.MaxShortTextLength, required: true);
+                    if (command.Mode is not null || command.TargetTemperature is not null)
+                        errors.Add("Option commands cannot set mode or temperature.");
+                    if (command.Kind == ClimateCommandKind.SetSwingMode && command.Option?.IsCustom == true)
+                        errors.Add("Swing mode cannot be custom.");
+                }
+                else if (command.Option is not null) errors.Add("option is not allowed for this command.");
                 switch (command.Kind)
                 {
                     case ClimateCommandKind.SetTargetTemperature:
@@ -117,6 +126,14 @@ public static class ProtocolValidator
                             errors.Add("targetTemperature is not allowed for SetMode.");
                         }
 
+                        break;
+                    case ClimateCommandKind.SetFanMode:
+                    case ClimateCommandKind.SetPreset:
+                    case ClimateCommandKind.SetSwingMode:
+                        break;
+                    case ClimateCommandKind.Rediscover:
+                        if (command.Mode is not null || command.TargetTemperature is not null)
+                            errors.Add("Rediscover cannot set climate values.");
                         break;
                     default:
                         errors.Add("kind is not a supported command.");
@@ -189,6 +206,28 @@ public static class ProtocolValidator
         }
 
         OptionalTemperature(errors, $"{path}.outdoorTemperature", snapshot.OutdoorTemperature);
+
+        foreach (var list in new[] { snapshot.CustomFanModes, snapshot.Presets, snapshot.CustomPresets, snapshot.SwingModes })
+            if (ListSize(errors, path + ".options", list))
+                foreach (var value in list) Text(errors, path + ".option", value, AgentProtocol.MaxShortTextLength, true);
+        if (ListSize(errors, path + ".entities", snapshot.Entities))
+            foreach (var entity in snapshot.Entities)
+            {
+                if (entity is null) { errors.Add("Null entity."); continue; }
+                Text(errors, "entity.id", entity.Id, 100, true);
+                Text(errors, "entity.name", entity.Name, 100, true);
+                Text(errors, "entity.unit", entity.Unit, 32, false);
+                if (entity.Domain is not ("sensor" or "climate" or "switch" or "button")) errors.Add("Invalid entity domain.");
+            }
+        if (ListSize(errors, path + ".sensors", snapshot.Sensors))
+            foreach (var sensor in snapshot.Sensors)
+            {
+                if (sensor is null) { errors.Add("Null sensor."); continue; }
+                Text(errors, "sensor.id", sensor.Id, 100, true);
+                Text(errors, "sensor.name", sensor.Name, 100, true);
+                Text(errors, "sensor.unit", sensor.Unit, 32, false);
+                if (sensor.Value is { } value && !double.IsFinite(value)) errors.Add("Invalid sensor value.");
+            }
 
         if (snapshot.LastError is { } error)
         {

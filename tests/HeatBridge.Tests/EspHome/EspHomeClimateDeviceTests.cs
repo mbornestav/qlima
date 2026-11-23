@@ -9,6 +9,27 @@ namespace HeatBridge.Tests.EspHome;
 public class EspHomeClimateDeviceTests
 {
     [Fact]
+    public async Task Discovery_CollectsSensorsAfterClimate_AndOptionalFailuresDoNotFailClimate()
+    {
+        var events = Samples.EventStream + "event: state\ndata: {\"id\":\"sensor-power_usage\",\"name\":\"Power\",\"uom\":\"W\",\"value\":750}\n\n";
+        var handler = StubHttpMessageHandler.Route(request => request.RequestUri!.AbsolutePath switch
+        {
+            "/events" => StubHttpMessageHandler.EventStreamResponse(events),
+            "/climate/air_conditioner" => StubHttpMessageHandler.JsonResponse(Samples.ClimateJson),
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+        });
+        var device = CreateDevice(handler);
+        var capabilities = await device.GetCapabilitiesAsync(CancellationToken.None);
+        Assert.Contains(capabilities!.Entities, e => e.Id == "sensor-power_usage" && e.Unit == "W");
+        var reading = await device.ReadAsync(CancellationToken.None);
+        Assert.Equal(27.5, reading.Climate.CurrentTemperature);
+        Assert.Contains(reading.Sensors, s => s.Id == "sensor-power_usage" && s.Value is null && s.ObservedAt is null);
+        var count = handler.Requests.Count(r => r.RequestUri!.AbsolutePath == "/sensor/power_usage");
+        await device.ReadAsync(CancellationToken.None);
+        Assert.Equal(count, handler.Requests.Count(r => r.RequestUri!.AbsolutePath == "/sensor/power_usage"));
+    }
+
+    [Fact]
     public async Task ReadAsync_CombinesClimateAndOutdoorTemperature()
     {
         var device = CreateDevice(StubHttpMessageHandler.Route(request => request.RequestUri!.AbsolutePath switch
@@ -54,7 +75,7 @@ public class EspHomeClimateDeviceTests
     }
 
     [Fact]
-    public async Task GetCapabilitiesAsync_UsesConfiguredModesWithoutContactingTheDevice()
+    public async Task GetCapabilitiesAsync_PreservesConfiguredModesWhenDiscoveryFails()
     {
         var handler = StubHttpMessageHandler.Throws(new HttpRequestException("should not be called"));
         var options = Samples.Options();
@@ -64,7 +85,7 @@ public class EspHomeClimateDeviceTests
         var capabilities = await device.GetCapabilitiesAsync(CancellationToken.None);
 
         Assert.Equal([ClimateMode.Off, ClimateMode.Heat], capabilities!.SupportedModes);
-        Assert.Empty(handler.Requests);
+        Assert.Single(handler.Requests);
     }
 
     [Fact]

@@ -22,12 +22,24 @@ public interface IDeviceSession
     /// <summary>Raised (possibly on a background thread) whenever <see cref="Snapshot"/> changes.</summary>
     event EventHandler<DeviceSnapshot>? SnapshotChanged;
 
+    event EventHandler<CommandCompletion>? CommandCompleted;
+
     /// <summary>Changes the target temperature and completes once the device has confirmed it.</summary>
     Task<CommandResult> SetTargetTemperatureAsync(double temperature, CancellationToken cancellationToken);
 
     /// <summary>Changes the operating mode and completes once the device has confirmed it.</summary>
     Task<CommandResult> SetModeAsync(ClimateMode mode, CancellationToken cancellationToken);
+
+    Task<CommandResult> SetFanModeAsync(ClimateOption selection, CancellationToken cancellationToken);
+
+    Task<CommandResult> SetPresetAsync(ClimateOption selection, CancellationToken cancellationToken);
+
+    Task<CommandResult> SetSwingModeAsync(string mode, CancellationToken cancellationToken);
+
+    Task<CommandResult> RediscoverAsync(CancellationToken cancellationToken);
 }
+
+public sealed record CommandCompletion(string Description, CommandResult Result, DateTimeOffset OccurredAt);
 
 /// <summary>Supplies device sessions that are not driven by a local <see cref="IClimateDevice"/>.</summary>
 public interface IDeviceSessionSource

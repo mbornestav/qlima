@@ -1,0 +1,38 @@
+@page "/history"
+@rendermode InteractiveServer
+@using HeatBridge.Web.Monitoring
+@inject MonitoringStore Store
+@inject DeviceRegistry Registry
+
+<PageTitle>Historik – HeatBridge</PageTitle>
+<section class="panel"><h1>Temperaturhistorik</h1>
+    <div class="settings-grid">
+        <label>Värmepump<select aria-label="Värmepump" @bind="_device" @bind:after="Load">@foreach (var device in Registry.Devices) { <option value="@device.DeviceId">@device.DisplayName</option> }</select></label>
+        <label>Period<select aria-label="Period" @bind="_days" @bind:after="Load"><option value="1">24 timmar</option><option value="7">7 dagar</option><option value="30">30 dagar</option></select></label>
+        <button type="button" class="secondary-button" @onclick="Load">Uppdatera</button>
+    </div>
+    @if (_error is not null) { <p role="alert">@_error</p> }
+    <TemperatureChart Samples="_samples" From="_from" To="_to" />
+    <p class="muted">Historik sparas i 90 dagar. Luckor betyder att aktuella värden saknades eller att HeatBridge inte kördes.</p>
+</section>
+<section class="panel"><h2>Händelser</h2>
+    @if (_activity.Count == 0) { <p>Inga händelser ännu.</p> }
+    <ol class="activity-list">@foreach (var entry in _activity) { <li><time>@MonitoringStore.Local(entry.At)</time><span>@entry.Text</span></li> }</ol>
+</section>
+
+@code {
+    private string _device = "";
+    private int _days = 1;
+    private DateTimeOffset _from, _to;
+    private IReadOnlyList<HistorySample> _samples = [];
+    private IReadOnlyList<ActivityEntry> _activity = [];
+    private string? _error;
+    protected override async Task OnInitializedAsync() { _device = Registry.Devices.FirstOrDefault()?.DeviceId ?? ""; await Load(); }
+    private async Task Load()
+    {
+        _to = DateTimeOffset.UtcNow; _from = _to.AddDays(-_days);
+        try { _samples = await Task.Run(() => Store.History(_device, _from)); _activity = await Task.Run(() => Store.Activities(_device)); _error = null; }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException or UnauthorizedAccessException or InvalidOperationException)
+        { _error = "Historiken kan inte läsas. Kontrollera tjänstens logg och ledigt lagringsutrymme."; }
+    }
+}

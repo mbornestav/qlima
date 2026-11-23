@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Produces artifacts/agent/heatbridge-agent-<version>-linux-arm64.tar.gz (+ .sha256) containing:
-      app/                       self-contained single-file agent (no .NET needed on the Pi)
+      app/                       self-contained agent and native runtime (no .NET installation needed)
       install.sh                 installer/updater (run with sudo on the Pi)
       heatbridge-agentctl        management tool
       heatbridge-agent.service   systemd unit
@@ -39,12 +39,19 @@ $staging = Join-Path $outputRoot $name
 $appDir = Join-Path $staging 'app'
 
 Write-Host "==> Publishing HeatBridge Agent $version for $Runtime"
-if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
+if (Test-Path -LiteralPath $staging) { throw "Release already exists: $staging" }
 New-Item -ItemType Directory -Force $appDir | Out-Null
 
-# Settings come from the publish profile: self-contained, single file, no trimming.
-& dotnet publish $project -p:PublishProfile=$Runtime -r $Runtime -o $appDir "-p:InformationalVersion=$version" --nologo
+# Explicit settings also work in clean checkouts, where user publish profiles are absent.
+# Keep runtime files alongside the executable so the hardened service needs no bundle extraction directory.
+& dotnet publish $project -c Release -r $Runtime --self-contained true -o $appDir `
+    -p:PublishSingleFile=false -p:PublishTrimmed=false `
+    "-p:InformationalVersion=$version" --nologo
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed ($LASTEXITCODE)" }
+if (-not (Test-Path -LiteralPath (Join-Path $appDir 'libcoreclr.so'))) { throw 'Package is missing the native .NET runtime.' }
+if (-not (Test-Path -LiteralPath (Join-Path $appDir 'HeatBridge.Agent.dll'))) { throw 'Agent assembly is missing.' }
+$runtimeConfig = Get-Content -Raw (Join-Path $appDir 'HeatBridge.Agent.runtimeconfig.json') | ConvertFrom-Json
+if (-not $runtimeConfig.runtimeOptions.includedFrameworks) { throw 'Agent package must include its .NET runtime.' }
 
 # Linux files must have LF line endings and no BOM, whatever the Git checkout settings are.
 $utf8 = New-Object System.Text.UTF8Encoding($false)

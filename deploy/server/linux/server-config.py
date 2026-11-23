@@ -102,8 +102,8 @@ class Assets(HTMLParser):
             self.urls.append(attrs["src"])
 
 
-def verify():
-    base = "http://127.0.0.1:5171/"
+def verify(port=5171):
+    base = "http://127.0.0.1:" + str(port) + "/"
     if get(base + "healthz").strip() != b"ok":
         raise ValueError("Server health check failed.")
     dashboard = get(base).decode("utf-8")
@@ -115,7 +115,7 @@ def verify():
         raise ValueError("Dashboard has no CSS or JavaScript assets.")
     for asset in assets.urls:
         url = urllib.parse.urljoin(base, asset)
-        if urllib.parse.urlsplit(url).netloc != "127.0.0.1:5171":
+        if urllib.parse.urlsplit(url).netloc != "127.0.0.1:" + str(port):
             raise ValueError("Unexpected external dashboard asset.")
         if not get(url):
             raise ValueError("Empty dashboard asset: " + asset)

@@ -26,4 +26,10 @@ public interface IClimateDevice
 
     /// <summary>Sends a new operating mode. Does not wait for the device to apply it.</summary>
     Task SetModeAsync(ClimateMode mode, CancellationToken cancellationToken);
+
+    Task SetFanModeAsync(ClimateOption selection, CancellationToken cancellationToken);
+
+    Task SetPresetAsync(ClimateOption selection, CancellationToken cancellationToken);
+
+    Task SetSwingModeAsync(string mode, CancellationToken cancellationToken);
 }

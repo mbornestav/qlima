@@ -45,6 +45,8 @@ public sealed partial class DeviceSession : IDeviceSession, IDisposable
     /// <summary>Raised (on a background thread) whenever <see cref="Snapshot"/> changes.</summary>
     public event EventHandler<DeviceSnapshot>? SnapshotChanged;
 
+    public event EventHandler<CommandCompletion>? CommandCompleted;
+
     public string DeviceId => _device.Id;
 
     public string DisplayName => _device.DisplayName;
@@ -87,10 +89,10 @@ public sealed partial class DeviceSession : IDeviceSession, IDisposable
         if (!limits.IsValid(temperature))
         {
             return Task.FromResult(Reject(string.Create(CultureInfo.InvariantCulture,
-                $"{temperature} °C is outside the supported range {limits.Minimum}–{limits.Maximum} °C or not a multiple of {limits.Step}.")));
+                $"{temperature} Â°C is outside the supported range {limits.Minimum}â€“{limits.Maximum} Â°C or not a multiple of {limits.Step}.")));
         }
 
-        var description = string.Create(CultureInfo.InvariantCulture, $"target temperature {temperature} °C");
+        var description = string.Create(CultureInfo.InvariantCulture, $"target temperature {temperature} Â°C");
         return ExecuteCommandAsync(
             description,
             ct => _device.SetTargetTemperatureAsync(temperature, ct),
@@ -118,10 +120,54 @@ public sealed partial class DeviceSession : IDeviceSession, IDisposable
 
     public void Dispose() => _gate.Dispose();
 
+    public Task<CommandResult> SetFanModeAsync(ClimateOption selection, CancellationToken cancellationToken) =>
+        Snapshot.Capabilities.SupportsFan(selection)
+            ? ExecuteCommandAsync($"flÃ¤kt {selection.Value}", ct => _device.SetFanModeAsync(selection, ct),
+                state => state.FanMode == selection.Value, cancellationToken)
+            : Task.FromResult(Reject("Unsupported fan mode."));
+
+    public Task<CommandResult> SetPresetAsync(ClimateOption selection, CancellationToken cancellationToken) =>
+        Snapshot.Capabilities.SupportsPreset(selection)
+            ? ExecuteCommandAsync($"fÃ¶rval {selection.Value}", ct => _device.SetPresetAsync(selection, ct),
+                state => state.Preset == selection.Value, cancellationToken)
+            : Task.FromResult(Reject("Unsupported preset."));
+
+    public Task<CommandResult> SetSwingModeAsync(string mode, CancellationToken cancellationToken) =>
+        Snapshot.Capabilities.SwingModes.Contains(mode, StringComparer.Ordinal)
+            ? ExecuteCommandAsync($"luftriktning {mode}", ct => _device.SetSwingModeAsync(mode, ct),
+                state => state.SwingMode == mode, cancellationToken)
+            : Task.FromResult(Reject("Unsupported swing mode."));
+
+    public async Task<CommandResult> RediscoverAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var capabilities = await _device.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+            if (capabilities is null) return Reject("No capabilities received.");
+            Publish(current => current with { Capabilities = capabilities });
+            return Snapshot.Climate is { } climate ? CommandResult.Confirmed(climate) : Reject("No climate reading yet.");
+        }
+        catch (DeviceCommunicationException ex)
+        {
+            return CommandResult.Failed(ex.Kind, ex.Message, Now);
+        }
+        finally { _gate.Release(); }
+    }
+
     private async Task<CommandResult> ExecuteCommandAsync(
         string description,
         Func<CancellationToken, Task> send,
         Func<ClimateState, bool> isApplied,
+        CancellationToken cancellationToken)
+    {
+        var result = await ExecuteCoreAsync(description, send, isApplied, cancellationToken).ConfigureAwait(false);
+        CommandCompleted?.Invoke(this, new CommandCompletion(description, result, Now));
+        return result;
+    }
+
+    private async Task<CommandResult> ExecuteCoreAsync(
+        string description, Func<CancellationToken, Task> send, Func<ClimateState, bool> isApplied,
         CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -190,6 +236,7 @@ public sealed partial class DeviceSession : IDeviceSession, IDisposable
             Status = ConnectionStatus.Online,
             Climate = reading.Climate,
             OutdoorTemperature = reading.OutdoorTemperature,
+            Sensors = reading.Sensors,
             Capabilities = capabilities ?? current.Capabilities,
             LastSuccessfulUpdate = Now,
             LastError = null,

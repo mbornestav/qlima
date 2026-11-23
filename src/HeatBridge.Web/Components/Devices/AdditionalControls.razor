@@ -1,0 +1,78 @@
+@using HeatBridge.Core.Devices
+@using HeatBridge.Core.Services
+@using HeatBridge.Web.Monitoring
+
+<details class="extra-controls">
+    <summary>Fläkt, luftriktning och enhetsinformation</summary>
+    <div class="settings-grid">
+        <label>Fläkt
+            <select aria-label="Fläkt" value="@FanValue" @onchange="ChangeFan" disabled="@Disabled">
+                <option value="">Välj fläktläge</option>
+                @foreach (var option in FanOptions) { <option value="@Key(option)">@SwedishText.FanModeLabel(option.Value)</option> }
+            </select>
+        </label>
+        <label>Förval
+            <select aria-label="Förval" value="@PresetValue" @onchange="ChangePreset" disabled="@Disabled">
+                <option value="">Välj förval</option>
+                @foreach (var option in PresetOptions) { <option value="@Key(option)">@Label(option.Value)</option> }
+            </select>
+        </label>
+        <label>Luftriktning
+            <select aria-label="Luftriktning" value="@Snapshot.Climate?.SwingMode" @onchange="ChangeSwing" disabled="@Disabled">
+                <option value="">Välj luftriktning</option>
+                @foreach (var mode in Snapshot.Capabilities.SwingModes) { <option value="@mode">@Label(mode)</option> }
+            </select>
+        </label>
+    </div>
+    <p role="status" aria-live="polite">@_feedback</p>
+    <button type="button" class="secondary-button" @onclick="Rediscover" disabled="@_busy">@(_busy ? "Arbetar…" : "Sök enhetsfunktioner igen")</button>
+    <h3>Avläsningar från enheten</h3>
+    @if (Snapshot.Sensors.Count == 0) { <p class="muted">Inga ytterligare sensorvärden har lästs. Uppgifter visas när enheten rapporterar dem.</p> }
+    else
+    {
+        <dl class="sensor-list">
+            @foreach (var sensor in Snapshot.Sensors)
+            {
+                var fresh = Snapshot.IsOnline && sensor.ObservedAt is { } at && DateTimeOffset.UtcNow - at < TimeSpan.FromMinutes(2);
+                <div><dt>@sensor.Name @(IsHumidity(sensor) ? "(experimentell)" : "")</dt>
+                    <dd>@(fresh && sensor.Value is { } value ? value.ToString("0.##", SwedishText.Culture) + " " + sensor.Unit : "Saknar aktuellt värde")</dd>
+                </div>
+            }
+        </dl>
+    }
+    <p class="muted">Värdena kommer från värmepumpen och Wi-Fi-modulen. Utetemperaturen kan vara missvisande efter längre inaktivitet.</p>
+    <details><summary>Upptäckta funktioner (@Snapshot.Capabilities.Entities.Count)</summary>
+        <ul>@foreach (var entity in Snapshot.Capabilities.Entities) { <li>@entity.Name <span class="muted">(@entity.Domain)</span></li> }</ul>
+    </details>
+</details>
+
+@code {
+    [Parameter, EditorRequired] public IDeviceSession Session { get; set; } = default!;
+    [Parameter, EditorRequired] public DeviceSnapshot Snapshot { get; set; } = default!;
+    private bool _busy;
+    private string? _feedback;
+    private bool Disabled => _busy || !Snapshot.IsOnline;
+    private IEnumerable<ClimateOption> FanOptions => Snapshot.Capabilities.FanModes.Except(Snapshot.Capabilities.CustomFanModes)
+        .Select(v => new ClimateOption(v)).Concat(Snapshot.Capabilities.CustomFanModes.Select(v => new ClimateOption(v, true)));
+    private IEnumerable<ClimateOption> PresetOptions => Snapshot.Capabilities.Presets.Select(v => new ClimateOption(v))
+        .Concat(Snapshot.Capabilities.CustomPresets.Select(v => new ClimateOption(v, true)));
+    private string FanValue => FanOptions.FirstOrDefault(o => o.Value == Snapshot.Climate?.FanMode) is { } option ? Key(option) : "";
+    private string PresetValue => PresetOptions.FirstOrDefault(o => o.Value == Snapshot.Climate?.Preset) is { } option ? Key(option) : "";
+    private static string Key(ClimateOption option) => (option.IsCustom ? "custom:" : "standard:") + option.Value;
+    private static string Label(string value) => value.ToUpperInvariant() switch
+    { "NONE" => "Inget", "BOOST" => "Snabb uppvärmning / kyla", "ECO" => "Eco", "SLEEP" => "Sömn", "FREEZE_PROTECTION" => "Frostskydd", "OFF" => "Av", "VERTICAL" => "Vertikal", "HORIZONTAL" => "Horisontell", "BOTH" => "Båda", _ => value };
+    private static bool IsHumidity(SensorReading sensor) => sensor.Name.Contains("humidity", StringComparison.OrdinalIgnoreCase);
+    private Task ChangeFan(ChangeEventArgs args) => FanOptions.FirstOrDefault(o => Key(o) == args.Value?.ToString()) is { } selection
+        ? Run(() => Session.SetFanModeAsync(selection, CancellationToken.None)) : Task.CompletedTask;
+    private Task ChangePreset(ChangeEventArgs args) => PresetOptions.FirstOrDefault(o => Key(o) == args.Value?.ToString()) is { } selection
+        ? Run(() => Session.SetPresetAsync(selection, CancellationToken.None)) : Task.CompletedTask;
+    private Task ChangeSwing(ChangeEventArgs args) => Run(() => Session.SetSwingModeAsync(args.Value?.ToString() ?? "", CancellationToken.None));
+    private Task Rediscover() => Run(() => Session.RediscoverAsync(CancellationToken.None));
+    private async Task Run(Func<Task<CommandResult>> action)
+    {
+        _busy = true; _feedback = "Väntar på enheten…";
+        try { var result = await action(); _feedback = result.Succeeded ? "Enheten har bekräftat ändringen." : $"Kunde inte bekräfta: {result.Error?.Detail}"; }
+        catch (Exception ex) when (ex is OperationCanceledException or HttpRequestException) { _feedback = "Anslutningen avbröts. Kontrollera aktuell status."; }
+        finally { _busy = false; }
+    }
+}

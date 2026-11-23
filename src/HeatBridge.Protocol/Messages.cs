@@ -77,6 +77,10 @@ public enum ClimateCommandKind
 {
     SetTargetTemperature = 1,
     SetMode = 2,
+    SetFanMode = 3,
+    SetPreset = 4,
+    SetSwingMode = 5,
+    Rediscover = 6,
 }
 
 /// <summary>A climate control command. <see cref="CommandId"/> correlates acks/results and de-duplicates retries.</summary>
@@ -85,7 +89,8 @@ public sealed record ClimateCommandMessage(
     string DeviceId,
     ClimateCommandKind Kind,
     double? TargetTemperature = null,
-    ClimateMode? Mode = null) : ProtocolMessage
+    ClimateMode? Mode = null,
+    ClimateOption? Option = null) : ProtocolMessage
 {
     public override bool IsSentByAgent => false;
 }

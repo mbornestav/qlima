@@ -195,7 +195,7 @@ public sealed class ProtocolConnection : IDisposable
                 _sendLock.Release();
             }
         }
-        catch (Exception ex) when (ex is OperationCanceledException or WebSocketException or ObjectDisposedException)
+        catch (Exception ex) when (ex is OperationCanceledException or WebSocketException or ObjectDisposedException or IOException)
         {
             _socket.Abort();
         }

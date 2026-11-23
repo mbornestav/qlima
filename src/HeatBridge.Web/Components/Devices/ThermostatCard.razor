@@ -51,6 +51,11 @@
     else
     {
         var limits = Climate.Limits;
+        <div class="room-summary">
+            <span>Inomhus</span><strong>@SwedishText.TemperatureWithUnit(Climate.CurrentTemperature)</strong>
+            <span>@(_snapshot.IsOnline ? "Senast avläst " : "Senast känt värde från ")@SwedishText.Time(_snapshot.LastSuccessfulUpdate)</span>
+            <a href="/history">Visa temperaturhistorik →</a>
+        </div>
         <div class="card-body">
             <section class="dial-section" aria-label="Måltemperatur">
                 <div class="dial @(IsTargetPending ? "is-pending" : null)">
@@ -144,6 +149,8 @@
             </section>
         </div>
     }
+
+    <AdditionalControls Session="Session" Snapshot="_snapshot" />
 
     <footer class="feedback" data-kind="@(_feedback?.Kind.ToString().ToLowerInvariant())" aria-live="polite">
         @if (_feedback is not null)

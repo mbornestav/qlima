@@ -2,17 +2,23 @@
 
   <PropertyGroup>
     <RootNamespace>HeatBridge.Web</RootNamespace>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
     <!-- Development-only secrets such as agent SecretHash values are kept in user secrets (see README). -->
     <UserSecretsId>heatbridge-web</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="HeatBridge.Tests" />
   </ItemGroup>
 
   <ItemGroup>
+    <Content Remove="App_Data\**" />
+    <None Remove="App_Data\**" />
     <Content Update="appsettings.Local.example.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
     <Content Update="appsettings.Local.json;appsettings.Development.json" CopyToPublishDirectory="Never" />
   </ItemGroup>

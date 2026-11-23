@@ -2,13 +2,15 @@
 """Smoke-test a framework-dependent production publish with a fake ESPHome device.
 
 Usage: python -B deploy/server/tests/smoke-server.py artifacts/server-smoke/app
-Uses localhost port 5171 and a temporary config/state directory; no real device is contacted.
+Uses an available localhost port and a temporary config/state directory; no real device is contacted.
 """
 import importlib.util
+from contextlib import closing
 import json
 import os
 import pathlib
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -44,7 +46,9 @@ class Device(BaseHTTPRequestHandler):
 def main():
     app = pathlib.Path(sys.argv[1]).resolve()
     with socket.socket() as available:
-        available.bind(("127.0.0.1", 5171))
+        available.bind(("127.0.0.1", 0))
+        port = available.getsockname()[1]
+    base = "http://127.0.0.1:" + str(port)
     helper = pathlib.Path(__file__).resolve().parents[1] / "linux" / "server-config.py"
     spec = importlib.util.spec_from_file_location("server_config", helper)
     config_module = importlib.util.module_from_spec(spec)
@@ -78,7 +82,7 @@ def main():
             first_keys = None
             for restart in range(2):
                 with open(root / "server.log", "w+", encoding="utf-8") as log:
-                    process = subprocess.Popen(command + ["--urls", "http://127.0.0.1:5171"], cwd=app, env=env,
+                    process = subprocess.Popen(command + ["--urls", base], cwd=app, env=env,
                                                stdout=log, stderr=subprocess.STDOUT)
                     try:
                         for _ in range(100):
@@ -86,7 +90,7 @@ def main():
                                 log.seek(0)
                                 raise AssertionError(log.read()[-6000:])
                             try:
-                                dashboard = config_module.get("http://127.0.0.1:5171/").decode()
+                                dashboard = config_module.get(base + "/").decode()
                                 if "Qlima smoke" in dashboard and Device.reads > 0:
                                     break
                             except (OSError, urllib.error.URLError):
@@ -95,9 +99,17 @@ def main():
                         else:
                             log.seek(0)
                             raise AssertionError("Dashboard was not ready.\n" + log.read()[-6000:])
-                        config_module.verify()
+                        config_module.verify(port)
+                        for route, expected in (("history", "Temperaturhistorik"), ("notifications", "E-post och larm")):
+                            assert expected in config_module.get(base + "/" + route).decode(), route
+                        database = state / "monitoring.db"
+                        assert database.exists(), "Monitoring database was not created."
+                        with closing(sqlite3.connect(database)) as db:
+                            assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+                            assert db.execute("SELECT count(*) FROM samples").fetchone()[0] > 0
+                            assert db.execute("SELECT count(*) FROM outbox").fetchone()[0] == 0, "Email should be disabled."
                         config_module.probe(config)
-                        request = urllib.request.Request("http://127.0.0.1:5171/", headers={"Host": "untrusted.invalid"})
+                        request = urllib.request.Request(base + "/", headers={"Host": "untrusted.invalid"})
                         try:
                             urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=5)
                             raise AssertionError("An untrusted host header was accepted.")

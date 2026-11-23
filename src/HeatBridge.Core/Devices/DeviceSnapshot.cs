@@ -24,6 +24,8 @@ public sealed record DeviceSnapshot
 
     public double? OutdoorTemperature { get; init; }
 
+    public IReadOnlyList<SensorReading> Sensors { get; init; } = [];
+
     public ClimateCapabilities Capabilities { get; init; } = ClimateCapabilities.Empty;
 
     public DateTimeOffset? LastSuccessfulUpdate { get; init; }

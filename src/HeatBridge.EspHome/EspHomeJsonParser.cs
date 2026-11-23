@@ -126,7 +126,14 @@ public static class EspHomeJsonParser
 
         var fanModes = GetStringArray(root, "fan_modes").Concat(GetStringArray(root, "custom_fan_modes")).ToList();
 
-        return new ClimateCapabilities { SupportedModes = supportedModes, FanModes = fanModes };
+        return new ClimateCapabilities
+        {
+            SupportedModes = supportedModes, FanModes = fanModes,
+            CustomFanModes = GetStringArray(root, "custom_fan_modes").ToArray(),
+            Presets = GetStringArray(root, "presets").ToArray(),
+            CustomPresets = GetStringArray(root, "custom_presets").ToArray(),
+            SwingModes = GetStringArray(root, "swing_modes").ToArray(),
+        };
     }
 
     private static IEnumerable<string> GetStringArray(JsonElement root, string propertyName) =>

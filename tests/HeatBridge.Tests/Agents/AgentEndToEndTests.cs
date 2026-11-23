@@ -12,6 +12,28 @@ namespace HeatBridge.Tests.Agents;
 public class AgentEndToEndTests
 {
     [Fact]
+    public async Task AdditionalControls_WorkAcrossAgentAndRejectUnsupportedOptions()
+    {
+        await using var server = await TestAgentServer.StartAsync(["qlima"]);
+        var fake = new FakeClimateDevice("qlima", "Qlima") { Capabilities = Core.AdditionalControlTests.Capabilities };
+        await using var agent = new TestAgent(server.CreateConnector(), fake);
+        await agent.StartAsync();
+        var device = server.Device("qlima");
+        await Eventually.WaitUntilAsync(() => device.Snapshot.IsOnline, "the remote device is online");
+        var completed = 0; device.CommandCompleted += (_, _) => completed++;
+        Assert.True((await device.SetFanModeAsync(new("silent", true), CancellationToken.None)).Succeeded);
+        Assert.True((await device.SetPresetAsync(new("ECO"), CancellationToken.None)).Succeeded);
+        Assert.True((await device.SetSwingModeAsync("BOTH", CancellationToken.None)).Succeeded);
+        Assert.Equal(3, completed);
+        Assert.Equal("BOTH", fake.State.SwingMode);
+        Assert.False((await device.SetPresetAsync(new("FREEZE_PROTECTION", true), CancellationToken.None)).Succeeded);
+        Assert.Equal(3, completed);
+        fake.Capabilities = fake.Capabilities! with { SwingModes = ["OFF"] };
+        Assert.True((await device.RediscoverAsync(CancellationToken.None)).Succeeded);
+        Assert.Equal(["OFF"], device.Snapshot.Capabilities.SwingModes);
+    }
+
+    [Fact]
     public async Task ConnectedAgent_ReportsDeviceStatus()
     {
         await using var server = await TestAgentServer.StartAsync(["qlima"]);

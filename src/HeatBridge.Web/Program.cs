@@ -5,6 +5,7 @@ using HeatBridge.Web.Agents;
 using HeatBridge.Web.Components;
 using HeatBridge.Web.Hosting;
 using Microsoft.AspNetCore.DataProtection;
+using HeatBridge.Web.Monitoring;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,6 +36,15 @@ builder.Services.AddRemoteAgents(remoteAgents, topology);
 
 // One poller for directly connected devices, independent of how many browser tabs are open.
 builder.Services.AddDevicePolling();
+
+var monitoringDirectory = Environment.GetEnvironmentVariable("HEATBRIDGE_WEB_STATE")
+    ?? Path.Combine(builder.Environment.ContentRootPath, "App_Data");
+builder.Services.AddSingleton(new MonitoringStore(Path.Combine(monitoringDirectory, "monitoring.db")));
+builder.Services.AddSingleton<MonitoringHealth>();
+builder.Services.AddHttpClient("Mailjet", client => client.Timeout = TimeSpan.FromSeconds(20));
+builder.Services.AddSingleton<MailjetSender>();
+builder.Services.AddHostedService<MonitoringService>();
+builder.Services.AddHostedService<EmailDeliveryService>();
 
 var app = builder.Build();
 

@@ -29,8 +29,8 @@ internal static class SwedishText
     public static string ModeDescription(ClimateMode mode) => mode switch
     {
         ClimateMode.Off => "Värmepumpen är avstängd",
-        ClimateMode.Heat => "Värmer till måltemperaturen",
-        ClimateMode.Cool => "Kyler till måltemperaturen",
+        ClimateMode.Heat => "Inställd på värme",
+        ClimateMode.Cool => "Inställd på kyla",
         ClimateMode.HeatCool => "Värmer eller kyler automatiskt",
         ClimateMode.Auto => "Automatisk drift",
         ClimateMode.FanOnly => "Endast fläkt, ingen värme eller kyla",

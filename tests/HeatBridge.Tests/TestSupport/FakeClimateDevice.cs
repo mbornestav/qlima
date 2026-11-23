@@ -83,4 +83,22 @@ internal sealed class FakeClimateDevice(string id = "fake", string displayName =
             throw CommandFailure;
         }
     }
+
+    public async Task SetFanModeAsync(ClimateOption selection, CancellationToken cancellationToken)
+    {
+        await WaitForBarrierAndFailIfConfigured();
+        if (AppliesCommands) State = State with { FanMode = selection.Value };
+    }
+
+    public async Task SetPresetAsync(ClimateOption selection, CancellationToken cancellationToken)
+    {
+        await WaitForBarrierAndFailIfConfigured();
+        if (AppliesCommands) State = State with { Preset = selection.Value };
+    }
+
+    public async Task SetSwingModeAsync(string mode, CancellationToken cancellationToken)
+    {
+        await WaitForBarrierAndFailIfConfigured();
+        if (AppliesCommands) State = State with { SwingMode = mode };
+    }
 }

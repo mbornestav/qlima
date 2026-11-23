@@ -482,6 +482,7 @@ $RECYCLE.BIN/
 *.swp
 
 # ---- HeatBridge ----
+App_Data/
 # Machine-specific configuration (device addresses, secrets)
 appsettings.Local.json
 # Local Claude Code / editor settings

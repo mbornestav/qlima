@@ -6,7 +6,7 @@ namespace HeatBridge.Protocol;
 public static class AgentProtocol
 {
     /// <summary>Protocol version announced in <see cref="HelloMessage"/>. Bump on breaking changes.</summary>
-    public const int Version = 1;
+    public const int Version = 2;
 
     /// <summary>The server route agents connect to.</summary>
     public const string ConnectPath = "/agent/connect";

@@ -41,6 +41,10 @@ public static class EspHomeRequestBuilder
             Append(query, "target_temperature", FormatTemperature(temperature));
         }
 
+        // ESPHome's REST setter resolves both standard and custom values through these parameters.
+        if (command.FanMode is { } fan) Append(query, "fan_mode", fan.Value);
+        if (command.Preset is { } preset) Append(query, "preset", preset.Value);
+        if (command.SwingMode is { } swing) Append(query, "swing_mode", swing);
         return new Uri($"climate/{Escape(entity)}/set?{query}", UriKind.Relative);
     }
 

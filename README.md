@@ -45,6 +45,10 @@ The dashboard (in Swedish) looks and works the same in both cases.
   agent, accepts only climate commands, verifies every command against the device, reconnects
   automatically and runs unattended under systemd.
 - Responsive layout for mobile and desktop, light and dark mode.
+- Fan, swing and preset controls, validated against discovered device capabilities and confirmed by read-back.
+- Temperature history (24 hours / 7 days / 30 days), with 90-day local SQLite retention and an activity timeline.
+- Configurable low-temperature, unavailable-monitoring and command-failure email alerts through Mailjet.
+- Optional sensor inventory and readings, including power, experimental humidity, Wi-Fi signal and uptime when exposed by the installed firmware.
 - The web app listens on `localhost` only. There is no public control API.
 
 ## Requirements
@@ -233,8 +237,8 @@ Run the same command with `python3` on Linux/WSL to include service activation, 
 rollback simulations. Windows skips those Linux-specific tests. `publish.ps1` also verifies runtime
 files, static assets and the absence of development settings in every package.
 
-To smoke-test a production publish against a fake local device (including key persistence across
-restart), with port 5171 free on the development computer:
+To smoke-test a production publish against a fake local device (including database and key persistence
+across restart), using an available loopback port on the development computer:
 
 ```powershell
 dotnet publish src/HeatBridge.Web -c Release --self-contained false -o artifacts/server-smoke/app
@@ -256,7 +260,7 @@ What it does:
    for that agent on the server.
 4. Pushes a `deviceStatus` for every device change, and sends a `heartbeat` (with uptime, memory and
    round-trip time) every 15 seconds.
-5. Executes `command` messages (`SetTargetTemperature` or `SetMode` only). It replies with a
+5. Executes explicit climate `command` messages (temperature, mode, fan, swing, preset and read-only rediscovery). It replies with a
    `commandAck` straight away. It then sends a `commandResult` once the device has been read back and
    the change confirmed.
 6. Reconnects with exponential backoff (1 s, 2 s, 4 s … max 30 s, ±20 % jitter) after any failure.
@@ -268,7 +272,7 @@ What it does:
 | --- | --- |
 | Credentials | Each agent has a random 256-bit secret, generated **on the agent**. The server stores only `sha256:<hex>` and compares hashes in constant time. A secret is never stored in Git, in the systemd unit or in the environment. On the Pi it lives in `/etc/heatbridge/agent-secret` (root only, mode 0600) and reaches the service as a systemd credential. |
 | Transport | Production uses `wss://` with normal certificate validation; there is no code path that disables validation. Unencrypted `ws://` is accepted only when **all** of the following hold: `DOTNET_ENVIRONMENT=Development`, `AllowInsecureLoopback=true`, and a loopback host (`127.0.0.1`, `::1`, `localhost`), as with an SSH tunnel. Otherwise the agent refuses to start. |
-| No proxying | The protocol has no URLs, hosts or raw requests. The server can only send `SetTargetTemperature` or `SetMode` for a device id the agent itself has configured. |
+| No proxying | The protocol has no URLs, hosts or raw requests. The server can only request the explicit climate operations or read-only rediscovery for a device id the agent itself has configured. |
 | Validation | Every message is parsed strictly: unknown types, missing fields, nulls, NaN, invalid ids, out-of-range temperatures, oversized messages (> 64 KiB) and binary frames all close the connection. Device limits and supported modes are enforced on both the server and the agent. |
 | Duplicates | Each command carries a GUID. The agent remembers recent ids, so a repeated message is acknowledged as a duplicate and never executed twice. The server ignores late or duplicate acks and results. |
 | One path per device | A device has exactly one transport. A newer connection from the same agent replaces the older one. |
@@ -309,7 +313,7 @@ repository folder; commands marked **Pi** run in an SSH session (`ssh pi@192.168
 ```
 
 This creates `artifacts\agent\heatbridge-agent-<version>-linux-arm64.tar.gz` and a `.sha256` file. The
-package contains a self-contained single-file executable (~80 MB, no trimming) plus the installer, the
+package contains a self-contained application and its runtime files (no trimming), plus the installer, the
 systemd unit and `heatbridge-agentctl`.
 
 ### 2. Copy and install (Windows → Pi)
@@ -542,6 +546,77 @@ Browser ⇄ SignalR ⇄ │ ThermostatCard ─► DeviceRegistry ─┬─► De
   "Auto" button sends `HEAT_COOL`.
 - This firmware lists the supported modes only on `/events`. Newer ESPHome includes them with `?detail=all`.
 
+## History, alerts and Mailjet (0.3)
+
+The dashboard now emphasizes the actual indoor temperature. Expand the device details for fan,
+swing and device presets. Only advertised choices are offered; a successful HTTP response alone
+does not count as success: every change is checked against a fresh device reading. Freeze protection
+appears only when advertised, and does not override the normal 17–30°C target limits.
+
+Discovery collects the initial `/events` inventory within the configured discovery timeout.
+Optional numeric sensors are refreshed at most once per minute, with a ten-second total time budget.
+Missing optional readings do not take climate control offline. Humidity is experimental; power
+readings are not guaranteed on every Qlima, and the app does not estimate consumption from operating
+mode. Device-reported outdoor temperatures may be unreliable after extended inactivity.
+
+`Historik` shows indoor, outdoor and target temperature with outage gaps, plus observed changes,
+command results and alerts. One sample is stored per minute; longer charts aggregate readings without
+connecting across missing data. Samples and completed activity are retained for 90 days. No data is
+backfilled for periods when the server was not running. Observed changes do not identify who used a remote control.
+
+`E-post och larm` provides per-device switches, thresholds and delays, recipient settings, a test
+button, and the outgoing email status. Defaults are below 10°C for 15 minutes, missing usable climate
+readings for 5 minutes, and failed valid commands (grouped per device for 15 minutes). Temperature
+recovers after five minutes at least 1°C above the threshold; availability recovers after 30 seconds.
+Active incidents remind daily and persist across restarts. Pending and recovery timers restart after
+an observation gap. Stale temperature values cannot open or resolve a temperature alert.
+
+**The Pi and internet must work for email to be sent.** This release has no external heartbeat
+monitor. A full-site power/internet outage cannot produce an immediate email from this app.
+
+### Configure Mailjet
+
+Use a verified Mailjet sender. The integration uses `https://api.mailjet.com/v3.1/send`, not SMTP.
+For development, store `HeatBridge:Mailjet:ApiKey`, `HeatBridge:Mailjet:SecretKey` and
+`HeatBridge:Mailjet:FromEmail` in the web project's .NET user secrets. Never commit credentials.
+
+On the Pi, after installing the release:
+
+```bash
+sudo bash /opt/heatbridge/web/current/configure-mailjet.sh
+sudo heatbridge-webctl restart
+```
+
+The setup prompts for the sender and both keys without echoing the keys. It installs root-only
+credential files and a systemd drop-in. Keys reach the service through systemd credentials, not
+process arguments or environment values. Existing credentials and the drop-in survive releases.
+Then open `E-post och larm`, save recipients, send a test, verify the inbox, enable email and save.
+Changing recipients or credentials requires a fresh test. Each recipient receives a separate message.
+
+Email stays disabled until configured and tested. The persistent outgoing queue retries network,
+timeout, 429 and server errors with backoff (honoring Retry-After) for up to 24 hours. Permanent
+provider errors appear as failed. An incident that recovers before its queued alert is sent produces
+one summary instead of obsolete warnings. "Accepted by Mailjet" does not mean delivered to the inbox.
+An ambiguous provider timeout or a crash after acceptance can result in a duplicate email; delivery
+is not exactly once. The app has no public delivery webhook.
+
+### Storage, upgrades and rollback
+
+History, notification settings, active incidents and the outgoing queue live in
+`$HEATBRIDGE_WEB_STATE/monitoring.db` (normally `/var/lib/heatbridge-web/monitoring.db`). Development
+defaults to the git-ignored `src/HeatBridge.Web/App_Data` directory. SQLite uses WAL and a background
+worker; state files are excluded from release packages. Storage and email failures are shown in the UI
+and logged. The current additive schema is version 1; newer incompatible schemas are rejected.
+
+Back up the SQLite database with SQLite's online backup API, or stop `heatbridge-web` before copying
+the database together with any `-wal` and `-shm` files. Releases and rollbacks do not remove the database.
+Rolling back to 0.2 leaves the database intact but disables history and alert processing until 0.3 returns.
+
+Agent protocol **version 2** adds fan/preset/swing commands, rediscovery, feature lists and optional
+sensor readings. Upgrade the server and any active agents together; version 1 peers are explicitly
+rejected. Direct Pi deployments do not require starting or upgrading the disabled agent.
+No firmware update or private-access/network change is required for this release.
+
 ## Roadmap
 
 - **Cloud server:** Docker on a small Linux VPS behind a TLS reverse proxy. Agents connect over `wss://`,
@@ -549,10 +624,10 @@ Browser ⇄ SignalR ⇄ │ ThermostatCard ─► DeviceRegistry ─┬─► De
 - **User authentication** before the dashboard is exposed beyond `localhost`.
 - **Live updates via SSE** on the agent instead of polling (`EspHomeClient.ReadClimateFromEventStreamAsync`
   already parses `/events`).
-- **Temperature history** in a database, fed from `IDeviceSession.SnapshotChanged`.
+- **Independent outage monitoring**, for Pi/power/internet failures that the app itself cannot report.
 - **WireGuard** as an alternative site link (the agent protocol works over any network that reaches the server).
-- **More controls** (fan mode, swing, presets). The device exposes these and they are parsed already.
-  New command kinds need explicit protocol support.
+- **Away/Home shortcuts and schedules**, followed by heating-performance warnings based on collected history.
+- **Energy reporting**, if valid power measurements are available on the particular heat pump.
 
 ## License
 

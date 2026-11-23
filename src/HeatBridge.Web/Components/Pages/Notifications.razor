@@ -1,0 +1,113 @@
+@page "/notifications"
+@rendermode InteractiveServer
+@using HeatBridge.Web.Monitoring
+@using System.ComponentModel.DataAnnotations
+@inject MonitoringStore Store
+@inject MailjetSender Mail
+@inject MonitoringHealth Health
+@inject DeviceRegistry Registry
+
+<PageTitle>E-post och larm – HeatBridge</PageTitle>
+<section class="panel"><h1>E-post och larm</h1>
+    <p>Få ett meddelande när temperaturen blir låg, övervakningen avbryts eller ett kommando misslyckas.</p>
+    <div class="notice">E-post kräver att Raspberry Pi och internet fungerar. Ett strömavbrott eller en avstängd Pi kan inte rapporteras direkt av appen.</div>
+    @if (_settings is { } settings)
+    {
+        <fieldset disabled="@_busy">
+            <label>Mottagare <span class="muted">(en per rad, högst tio)</span><textarea rows="3" @bind="settings.Recipients"></textarea></label>
+            <label class="check-label"><input type="checkbox" @bind="settings.Enabled" disabled="@(!_ready)" /> Aktivera e-post</label>
+            <p class="muted">@(_ready ? "Testet accepterades av Mailjet. E-post kan aktiveras." : "Spara mottagare och skicka ett test innan du aktiverar e-post.")</p>
+            @foreach (var device in Registry.Devices)
+            {
+                var rules = settings.Devices[device.DeviceId];
+                <section class="rule-section"><h2>@device.DisplayName</h2>
+                    <label class="check-label"><input type="checkbox" @bind="rules.LowEnabled" /> Varning för låg temperatur</label>
+                    <div class="settings-grid">
+                        <label>Under (°C)<input type="number" min="-40" max="40" step="0.5" @bind="rules.LowTemperature" /></label>
+                        <label>I minst (minuter)<input type="number" min="1" max="1440" @bind="rules.LowMinutes" /></label>
+                    </div>
+                    <p class="muted">Återställs när temperaturen legat minst 1°C över gränsen i 5 minuter.</p>
+                    <label class="check-label"><input type="checkbox" @bind="rules.AvailabilityEnabled" /> Varning när aktuella avläsningar saknas</label>
+                    <label>Vänta (minuter)<input type="number" min="1" max="1440" @bind="rules.UnavailableMinutes" /></label>
+                    <label class="check-label"><input type="checkbox" @bind="rules.CommandFailureEnabled" /> Meddela om ett kommando misslyckas</label>
+                </section>
+            }
+            <p>Pågående larm påminner en gång per dygn. Återställda förhållanden ger ett återställningsmeddelande. Upprepade kommandofel grupperas i 15 minuter.</p>
+            <div class="button-row"><button type="button" class="primary-button" @onclick="Save">Spara inställningar</button>
+                <button type="button" class="secondary-button" @onclick="Test">@(_busy ? "Arbetar…" : "Skicka testmeddelande")</button></div>
+        </fieldset>
+    }
+    <p role="status" aria-live="polite">@_message</p>
+    @if (Health.EmailError is not null) { <p class="notice danger" role="alert">@Health.EmailError</p> }
+    <p class="muted">Mailjet-nycklar och verifierad avsändare ställs in på servern. Nycklar visas aldrig här. Mottagare får separata meddelanden.</p>
+</section>
+<section class="panel"><h2>Senaste e-postmeddelanden</h2><button type="button" class="secondary-button" @onclick="RefreshEmails">Uppdatera status</button>
+    <p class="muted">”Accepterat” betyder att Mailjet tagit emot meddelandet, inte att det nått inkorgen.</p>
+    @if (_emails.Count == 0) { <p>Inga larmmeddelanden ännu.</p> }
+    <ol class="activity-list">@foreach (var email in _emails) { <li><time>@MonitoringStore.Local(email.CreatedAt)</time><span>@email.Subject<br />@email.Recipient · @Status(email.Status) · @email.Attempts försök</span></li> }</ol>
+</section>
+
+@code {
+    private NotificationSettings? _settings;
+    private IReadOnlyList<OutgoingEmail> _emails = [];
+    private bool _busy, _ready;
+    private string? _message;
+    protected override async Task OnInitializedAsync()
+    {
+        try { await Reload(); }
+        catch (Exception ex) when (IsExpected(ex)) { _message = "Inställningarna kan inte läsas. Kontrollera serverns lagring."; }
+    }
+    private async Task Reload()
+    {
+        _settings = await Task.Run(Store.Settings);
+        foreach (var device in Registry.Devices) _settings.Devices.TryAdd(device.DeviceId, new());
+        _ready = Mail.IsReady(_settings);
+        await RefreshEmails();
+    }
+    private async Task RefreshEmails()
+    {
+        try { _emails = await Task.Run(Store.Emails); }
+        catch (Exception ex) when (IsExpected(ex)) { _message = "E-posthistoriken kan inte läsas."; }
+    }
+    private async Task Save()
+    {
+        _busy = true;
+        try
+        {
+            if (_settings is null) return;
+            if (!Mail.IsReady(_settings)) _settings.Enabled = false;
+            await Task.Run(() => Store.SaveSettings(_settings));
+            await Reload(); _message = "Inställningarna har sparats.";
+        }
+        catch (Exception ex) when (IsExpected(ex)) { _message = ex is ValidationException ? ex.Message : "Inställningarna kunde inte sparas."; }
+        finally { _busy = false; }
+    }
+    private async Task Test()
+    {
+        _busy = true;
+        try
+        {
+            if (_settings is null) return;
+            _settings.Validate();
+            if (_settings.Addresses().Length == 0) { _message = "Ange minst en mottagare."; return; }
+            _settings.Enabled = false;
+            await Task.Run(() => Store.SaveSettings(_settings));
+            var fingerprint = Mail.Fingerprint(_settings);
+            if (fingerprint.Length == 0) { _message = "Konfigurera Mailjet-nycklar och verifierad avsändare på servern först."; return; }
+            foreach (var recipient in _settings.Addresses())
+            {
+                var result = await Mail.SendAsync(recipient, "Test från HeatBridge", "Detta är ett test av e-postaviseringar från HeatBridge. Kontrollera att meddelandet kommit fram innan du förlitar dig på larmen.", CancellationToken.None);
+                if (!result.Accepted) { _message = result.Error; Health.EmailError = result.Error; return; }
+            }
+            _settings.TestedConfiguration = fingerprint;
+            await Task.Run(() => Store.SaveSettings(_settings));
+            Health.EmailError = null; Health.LastMailAccepted = DateTimeOffset.UtcNow;
+            await Reload(); _message = "Testet accepterades av Mailjet. Kontrollera inkorgen, aktivera e-post och spara.";
+        }
+        catch (Exception ex) when (IsExpected(ex)) { _message = ex is ValidationException ? ex.Message : "Testet kunde inte slutföras."; }
+        finally { _busy = false; }
+    }
+    private static bool IsExpected(Exception ex) => ex is ValidationException or Microsoft.Data.Sqlite.SqliteException or IOException or UnauthorizedAccessException or InvalidOperationException or System.Text.Json.JsonException;
+    private static string Status(string status) => status switch
+    { "queued" => "I kö", "sending" => "Skickas", "accepted" => "Accepterat av Mailjet", "failed" => "Misslyckat", "superseded" => "Ersatt av sammanfattning", "cancelled" => "Avbrutet", _ => status };
+}
